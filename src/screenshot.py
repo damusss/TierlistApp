@@ -46,6 +46,10 @@ class ScreenshotWindowManager:
     def image_w(self):
         return self.image_h * self.appdata.image_ratio
 
+    @property
+    def layer_cache(self):
+        return None
+
     def get_tiers_percentage(self):
         return "100"
 
@@ -59,11 +63,14 @@ class ScreenshotWindowManager:
         self.screenshot_taking = True
         self.screenshot_framec = 0
         self.screenshot_window = pygame.Window(
-            "Screenshot Temporary Window", pygame.Vector2(self.app.window.size) * self.appdata.screenshot_window_mult
+            "Screenshot Temporary Window",
+            pygame.Vector2(self.app.window.size) * self.appdata.screenshot_window_mult,
         )
         self.mili.canva = self.screenshot_window.get_surface()
         self.mili.canva_offset = self.mili.canva.size
-        self.image_h = self.app.tierlist_view.image_h * self.appdata.screenshot_window_mult
+        self.image_h = (
+            self.app.tierlist_view.image_h * self.appdata.screenshot_window_mult
+        )
         self.screenshot_ready = False
 
     def screenshot_ui(self):
@@ -94,10 +101,10 @@ class ScreenshotWindowManager:
         surf = self.screenshot_window.get_surface()
         pygame.image.save(
             surf.subsurface((0, 0, surf.width, self.lowest_card_bottom)),
-            f"user_data/screenshots/{self.tierlist.name}_{date_str}.png",
+            f"screenshots/{self.tierlist.name}_{date_str}.png",
         )
         print(
-            f"Saved screenshot of tierlist {self.tierlist.name} to 'user_data/screenshots/{self.tierlist.name}_{date_str}.png'"
+            f"Saved screenshot of tierlist {self.tierlist.name} to 'screenshots/{self.tierlist.name}_{date_str}.png'"
         )
 
     def screenshot_stop(self):

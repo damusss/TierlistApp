@@ -37,18 +37,18 @@ def cond(it, normal, hover, press):
 def load_json(rel_path, default):
     path = f"user_data/{rel_path}"
     if not os.path.exists(path):
-        with open(path, "w") as file:
+        with open(path, "w", encoding="utf-8", errors="replace") as file:
             json.dump(default, file, default=fallback_serializer)
         return default
-    with open(path, "r") as file:
+    with open(path, "r", encoding="utf-8", errors="replace") as file:
         data = default.copy()
-        data.update(json.load(file))
+        data.update(json.loads(file.read()))
         return data
 
 
 def write_json(rel_path, data):
     path = f"user_data/{rel_path}"
-    with open(path, "w") as file:
+    with open(path, "w", encoding="utf-8", errors="replace") as file:
         json.dump(data, file, default=fallback_serializer)
 
 
@@ -86,7 +86,7 @@ class UIComponent:
         self.mili.rect({"color": (cond(it, *BTN_COLS),) * 3})
         self.mili.image(
             mili.icon.get_google("arrow_back", "white"),
-            {"alpha": cond(it, *ALPHAS), "cache": mili.ImageCache.get_next_cache()},
+            {"alpha": cond(it, *ALPHAS), "cache": "auto"},
         )
         if it.left_just_released:
             if self.can_back():
@@ -109,7 +109,7 @@ class UIComponent:
         self.mili.rect({"color": (cond(it, *BTN_COLS),) * 3})
         self.mili.image(
             mili.icon.get_google(iconname),
-            {"alpha": cond(it, *ALPHAS), "cache": mili.ImageCache.get_next_cache()},
+            {"alpha": cond(it, *ALPHAS), "cache": "auto"},
         )
         if it.left_just_released:
             if callback:
@@ -132,6 +132,7 @@ class UIComponent:
         buttons=None,
         scroll=None,
         small=False,
+        longer=False,
     ):
         if scroll is None:
             scroll = self.scroll
@@ -152,7 +153,7 @@ class UIComponent:
             left_entry.ui(
                 self.mili,
                 (0, 0, 0, self.mult(35)),
-                {"fillx": "45"},
+                {"fillx": "55" if longer else "45"},
                 self.mult,
                 txtcol="white",
             )
@@ -160,7 +161,7 @@ class UIComponent:
             right_entry.ui(
                 self.mili,
                 (0, 0, 0, self.mult(35)),
-                {"fillx": "45"},
+                {"fillx": "55" if longer else "45"},
                 self.mult,
                 txtcol=("white" if col is not None else "red"),
             )
@@ -188,6 +189,9 @@ class UIComponent:
         namecol="white",
         entrysize=None,
         scroll=None,
+        post_txt=None,
+        post_style=None,
+        clickable=False,
     ):
         if scroll is None:
             scroll = self.scroll
@@ -202,7 +206,13 @@ class UIComponent:
             }
             | mili.X
             | mili.PADLESS,
-        ):
+        ) as cont:
+            cdata = cont.data
+            if cdata.absolute_rect.bottom < 0 or cdata.absolute_rect == (0, 0, 0, 0):
+                self.mili.element((0, 0, 0, self.mult(40)))
+                entryline_.entry_rect = pygame.Rect()
+                entryline_.focused
+                return cdata
             self.mili.text_element(
                 text,
                 {
@@ -210,9 +220,10 @@ class UIComponent:
                     "align": "right",
                     "font_align": pygame.FONT_RIGHT,
                     "color": namecol,
+                    "cache": "auto",
                 },
                 None,
-                {"fillx": namefillx},
+                {"fillx": namefillx, "blocking": False},
             )
             entryline_.ui(
                 self.mili,
@@ -247,6 +258,21 @@ class UIComponent:
                         ...
             entryline_.trigger_callback()
             self.uicommon_buttons(buttons)
+            if post_txt:
+                self.mili.text_element(
+                    post_txt,
+                    post_style | {"cache": "auto"},
+                    None,
+                    {"blocking": False, "fillx": "20"},
+                )
+            if clickable:
+                if cont.hovered:
+                    self.mili.rect(
+                        {"color": (BG_COL[0] + 5,) * 3, "element_id": cdata.id}
+                    )
+                if cont.left_just_released:
+                    clickable()
+        return cdata
 
     def uicommon_buttons(self, buttons):
         if buttons is not None:
@@ -263,18 +289,21 @@ class UIComponent:
                         {
                             "fill_color": col,
                             "fill": True,
-                            "cache": mili.ImageCache.get_next_cache(),
+                            "cache": "auto",
                         },
                         (0, 0, size, size),
                     )
                 else:
                     it = self.mili.element((0, 0, self.mult(size), self.mult(size)))
-                    self.mili.rect({"color": (cond(it, *BTN_COLS),) * 3})
+                    if iconname is not None:
+                        self.mili.rect({"color": (cond(it, *BTN_COLS),) * 3})
                     self.mili.image(
-                        mili.icon.get_google(iconname, "white"),
+                        SURF
+                        if iconname is None
+                        else mili.icon.get_google(iconname, "white"),
                         {
                             "alpha": cond(it, *ALPHAS),
-                            "cache": mili.ImageCache.get_next_cache(),
+                            "cache": "auto",
                         },
                     )
                     if it.left_just_released:

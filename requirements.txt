@@ -1,5 +1,5 @@
 pygame-ce>=2.5.2
-mili-ui>=1.0.1
+mili-ui>=1.0.3
 Pillow
 bs4
 requests

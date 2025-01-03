@@ -11,10 +11,10 @@ import pathlib
 from src import common
 from src import alert
 
-for folder in ["user_data", "backups", "custom_chars"]:
+for folder in ["user_data", "backups", "custom_chars", "screenshots"]:
     if not os.path.exists(folder):
         os.mkdir(folder)
-for folder in ["tierlists", "categories", "screenshots"]:
+for folder in ["tierlists", "categories"]:
     if not os.path.exists(f"user_data/{folder}"):
         os.mkdir(f"user_data/{folder}")
 
@@ -49,6 +49,9 @@ class CategoryData:
         self.abort = False
         self.to_reload = False
         self.no_image = []
+        self.covers_downloaded = 0
+        self.collapsed = True
+        self.auto = True
 
     def load(self, uid, data):
         self.name = data["name"]
@@ -59,6 +62,7 @@ class CategoryData:
         for key, value in cached.items():
             self.cached[key] = set(value)
         self.no_image = data.get("no_image", [])
+        self.auto = data.get("auto", True)
         self.update_downloaded()
         return self
 
@@ -69,12 +73,15 @@ class CategoryData:
             "only_cover": self.only_cover,
             "cached": self.cached,
             "no_image": self.no_image,
+            "auto": self.auto,
         }
 
     def image_prefixed(self, name):
         return f"{self.uid}|{name}"
 
-    def get_downloaded_of(self, link):
+    def get_downloaded_of(self, link, include_covers=False):
+        if not self.auto:
+            return f"({len(self.downloaded)})", True
         if self.uid == common.ANIMES_UID:
             return "", True
         unknown = False
@@ -89,13 +96,31 @@ class CategoryData:
             if link is not None:
                 to_download = self.cached[link]
             remaining = to_download.difference(set(self.downloaded))
-            return f"({len(to_download)-len(remaining)}/{len(to_download)})", len(
-                remaining
-            ) == 0
+            return (
+                f"({len(to_download)-len(remaining)}{f"+{self.covers_downloaded}" if include_covers else ""}/{len(to_download)}{f"+{len(self.links)}" if include_covers else ""})",
+                (
+                    len(remaining) == 0
+                    and (
+                        not include_covers or len(self.links) == self.covers_downloaded
+                    )
+                ),
+            )
         else:
             return f"({len(self.downloaded)}/?)", False
 
     def download(self):
+        if not self.auto:
+            if not os.path.exists(f"user_data/categories/{self.uid}"):
+                os.mkdir(f"user_data/categories/{self.uid}")
+            self.update_downloaded()
+            self.data.load_category_images(self)
+            return
+        if self.name.strip() == "":
+            alert.alert(
+                "Empty Category Name Error",
+                f"The category you are trying to download (UID: {self.uid}) has no name and cannot be downloaded. Did you forget to sync your changes?",
+            )
+            return
         self.downloading = True
         thread = threading.Thread(target=self.thread_download)
         thread.start()
@@ -143,8 +168,23 @@ class CategoryData:
             ]
         else:
             self.downloaded = []
-        if self.uid != common.ANIMES_UID:
+        if self.uid != common.ANIMES_UID and self.auto:
             self.data.categories[common.ANIMES_UID].update_downloaded()
+        if not os.path.exists("user_data/categories/0"):
+            self.covers_downloaded = 0
+            return
+        self.covers_downloaded = 0
+        if not self.auto:
+            return
+        cover_files = [
+            f"{self.name}" if i == 0 else f"{self.name}_{i+1}"
+            for i in range(len(self.links))
+        ]
+        for file in os.listdir("user_data/categories/0"):
+            file = file.split(".")[0]
+            for cover in cover_files:
+                if file == cover:
+                    self.covers_downloaded += 1
 
     def async_download_character_image(
         self, img_url, anime_name, char_name, is_anime=False
@@ -298,8 +338,18 @@ class CategoryData:
 class TierlistData:
     def __init__(self):
         self.name = f"new_tierlist_{pygame.time.get_ticks()}"
-        self.tiers = []
-        self.tiers_settings = []
+        self.tiers = [list() for i in range(9)]
+        self.tiers_settings = [
+            {"name": "S+", "color": "$purple", "txtcol": "white"},
+            {"name": "S", "color": "$red", "txtcol": "white"},
+            {"name": "A", "color": "$orange", "txtcol": "white"},
+            {"name": "B", "color": "$yellow", "txtcol": "black"},
+            {"name": "C", "color": "$lightgreen", "txtcol": "black"},
+            {"name": "D", "color": "$darkgreen", "txtcol": "white"},
+            {"name": "E", "color": "$lightblue", "txtcol": "black"},
+            {"name": "F", "color": "$blue", "txtcol": "white"},
+            {"name": "F-", "color": "$darkblue", "txtcol": "white"},
+        ]
         self.tiers_all = set()
         self.only_category = ""
         self.default_image_h = common.IMAGE_H
@@ -344,8 +394,9 @@ class Data:
 
     def load(self):
         for folder in os.listdir("user_data/categories"):
-            if len(os.listdir(f"user_data/categories/{folder}")) <= 0:
-                os.rmdir(f"user_data/categories/{folder}")
+            if pathlib.Path(f"user_data/categories/{folder}").is_dir():
+                if len(os.listdir(f"user_data/categories/{folder}")) <= 0:
+                    os.rmdir(f"user_data/categories/{folder}")
         categories_data = common.load_json(
             "categories.json",
             {
@@ -446,19 +497,27 @@ class Data:
             if found:
                 continue
             try:
-                image = pygame.image.load(folder + f"/{filename}").convert_alpha()
-                self.images[string] = image
+                image = pygame.image.load(folder + f"/{filename}")
+
             except pygame.error as e:
                 self.image_load_error(folder + f"/{filename}", e)
+                continue
+            self.images[string] = image.convert_alpha()
         if self.to_load_categories is not None:
             self.to_load_categories -= 1
 
     def image_load_error(self, path, e):
-        os.remove(path)
         alert.alert(
             "Error Loading Image",
-            f"Could not load image {path} due to unexpected error '{e}'. Image has been deleted.",
+            f"Could not load image {path} due to unexpected error '{e}'. Press 'Delete' to delete it.",
+            options=("Delete", "Understood"),
+            callback=lambda: os.remove(path),
         )
+
+    def confirm_delete(self, btn, path):
+        if btn == 1:
+            return
+        os.remove(path)
 
     def load_recent_image(self, category: CategoryData, save_path):
         path = save_path
@@ -467,10 +526,11 @@ class Data:
         if string in self.images:
             return
         try:
-            image = pygame.image.load(path).convert_alpha()
-            self.images[string] = image
+            image = pygame.image.load(path)
         except pygame.error as e:
             self.image_load_error(path, e)
+            return
+        self.images[string] = image.convert_alpha()
 
     def get_size_ratio(self, path):
         calc_path = str(path).strip().replace('"', "")
@@ -515,6 +575,7 @@ class Data:
 
     def add_category(self):
         category = CategoryData(self, self.free_category_uid)
+        category.collapsed = False
         self.free_category_uid += 1
         self.categories[category.uid] = category
 
@@ -593,7 +654,6 @@ class Data:
         shutil.copyfile("user_data/categories.json", f"{backup_folder}categories.json")
         shutil.copyfile("user_data/settings.json", f"{backup_folder}settings.json")
         shutil.copytree("user_data/tierlists", f"{backup_folder}tierlists")
-        shutil.copytree("user_data/screenshots", f"{backup_folder}screenshots")
 
     def apply_custom_chars(self, filter=None):
         thread = threading.Thread(target=self.thread_apply_custom_chars, args=(filter,))

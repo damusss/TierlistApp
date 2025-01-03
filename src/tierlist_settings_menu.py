@@ -1,9 +1,10 @@
 import mili
 import pygame
 import os
+import datetime
+import json
 from src import common
 from src import entryline
-from src import data
 from src import alert
 from functools import partial
 
@@ -23,13 +24,18 @@ class TierlistSettingsMenu(common.UIComponent):
         self.distribution_data_entry = entryline.Entryline(
             "Enter data...", False, None, common.DISTRIBUTION
         )
+        self.copyfrom_entry = entryline.Entryline(
+            "Enter tierlist name...", lowercase=True
+        )
         self.settings_entries = {}
 
     def open(self):
+        self.settings_entries = {}
         self.name_entry.set_text(self.tierlist.name)
         self.only_category_entry.set_text(self.tierlist.only_category)
         self.image_h_entry.set_text(self.tierlist.default_image_h)
         self.distribution_data_entry.set_text(self.tierlist.distribution_data)
+        self.copyfrom_entry.set_text("")
 
     @property
     def tierlist(self):
@@ -37,7 +43,10 @@ class TierlistSettingsMenu(common.UIComponent):
 
     def ui(self):
         with self.mili.begin(None, mili.CENTER | mili.FILL | mili.PADLESS):
-            self.mili.text_element("Tierlist Settings", {"size": self.mult(40)})
+            self.mili.text_element(
+                "Tierlist Settings",
+                {"size": self.mult(40), "cache": "auto"},
+            )
             self.uicommon_back(self.app.tierlist_view)
             with self.mili.begin(
                 None,
@@ -49,6 +58,7 @@ class TierlistSettingsMenu(common.UIComponent):
                 self.ui_only_category()
                 self.ui_image_h()
                 self.ui_distribution_color()
+                self.ui_copy_from()
                 self.ui_tiers_settings()
                 self.ui_marked()
                 self.ui_action_btns()
@@ -57,9 +67,7 @@ class TierlistSettingsMenu(common.UIComponent):
     def ui_help(self):
         self.mili.text_element(
             "Commands Help",
-            {
-                "size": self.mult(26),
-            },
+            {"size": self.mult(26), "cache": "auto"},
             None,
             {"offset": self.scroll.get_offset()},
         )
@@ -105,22 +113,26 @@ class TierlistSettingsMenu(common.UIComponent):
                                 "font_align": align[i],
                                 "growx": False,
                                 "wraplen": it.data.rect.w,
+                                "slow_grow": True,
+                                "cache": "auto",
                             },
                         )
 
     def ui_marked(self):
         self.mili.text_element(
             "Marked Preview",
-            {
-                "size": self.mult(26),
-            },
+            {"size": self.mult(26), "cache": "auto"},
             None,
             {"offset": self.scroll.get_offset()},
         )
         if len(self.tierlist.marked) <= 0:
             self.mili.text_element(
                 "No marked items yet...",
-                {"size": self.mult(19), "color": (200,) * 3},
+                {
+                    "size": self.mult(19),
+                    "color": (200,) * 3,
+                    "cache": "auto",
+                },
                 None,
                 {"offset": self.scroll.get_offset()},
             )
@@ -144,7 +156,7 @@ class TierlistSettingsMenu(common.UIComponent):
                 self.mili.image(
                     image,
                     {
-                        "cache": mili.ImageCache.get_next_cache(),
+                        "cache": "auto",
                         "alpha": common.cond(it, *common.ALPHAS),
                     },
                 )
@@ -154,20 +166,20 @@ class TierlistSettingsMenu(common.UIComponent):
     def ui_tiers_settings(self):
         self.mili.text_element(
             "Tiers Settings",
-            {
-                "size": self.mult(26),
-            },
+            {"size": self.mult(26), "cache": "auto"},
             None,
             {"offset": self.scroll.get_offset()},
         )
         new_settings = []
+        self.to_move_down = None
+        self.to_move_up = None
+        self.to_delete = None
         i = 0
-        for settings in list(self.tierlist.tiers_settings):
+        for i, settings in enumerate(list(self.tierlist.tiers_settings)):
             if len(self.tierlist.tiers) <= i:
-                self.tierlist.tiers.append(set())
+                self.tierlist.tiers.append([])
             left_entry = self.get_settings_entry(i, settings["name"], "left")
             right_entry = self.get_settings_entry(i, settings["color"], "right")
-            self.add_next_setting = True
             self.uicommon_color(
                 left_entry,
                 right_entry,
@@ -180,20 +192,35 @@ class TierlistSettingsMenu(common.UIComponent):
                             "white" if settings["txtcol"] == "black" else "black",
                         ),
                     ),
-                    (30, "delete", self.action_delete_tier),
+                    (30, "delete", lambda: setattr(self, "to_delete", i)),
+                    (
+                        30 if i > 0 else None,
+                        "arrow_drop_up",
+                        lambda: setattr(self, "to_move_up", i),
+                    ),
+                    (
+                        30 if i < len(self.tierlist.tiers_settings) - 1 else None,
+                        "arrow_drop_down",
+                        lambda: setattr(self, "to_move_down", i),
+                    ),
+                    (
+                        30
+                        if i <= 0 or i >= len(self.tierlist.tiers_settings) - 1
+                        else None,
+                        None,
+                        lambda: ...,
+                    ),
                 ],
+                longer=True,
             )
-            if self.add_next_setting:
-                new_settings.append(
-                    {
-                        "name": left_entry.texts,
-                        "color": right_entry.texts,
-                        "txtcol": settings["txtcol"],
-                    }
-                )
-                i += 1
-            else:
-                self.tierlist.tiers.pop(i)
+            new_settings.append(
+                {
+                    "name": left_entry.texts,
+                    "color": right_entry.texts,
+                    "txtcol": settings["txtcol"],
+                }
+            )
+            i += 1
         it = self.mili.element(
             (0, 0, self.mult(40), self.mult(40)), {"offset": self.scroll.get_offset()}
         )
@@ -201,14 +228,20 @@ class TierlistSettingsMenu(common.UIComponent):
             mili.icon.get_google("add", "white"),
             {
                 "alpha": common.cond(it, *common.ALPHAS),
-                "cache": mili.ImageCache.get_next_cache(),
+                "cache": "auto",
             },
         )
         if it.left_just_released:
             new_settings.append(
                 {"name": "tier_name", "color": "white", "txtcol": "white"}
             )
-        self.tierlist.tiers_settings = new_settings
+        if self.to_move_down is not None:
+            self.action_move_down(self.to_move_down, new_settings)
+        if self.to_move_up is not None:
+            self.action_move_up(self.to_move_up, new_settings)
+        if self.to_delete is not None:
+            self.action_delete_tier(self.to_delete, new_settings)
+        self.tierlist.tiers_settings = new_settings.copy()
 
     def ui_action_btns(self):
         for txt, callback, col in [
@@ -229,7 +262,14 @@ class TierlistSettingsMenu(common.UIComponent):
                 None, {"fillx": "30", "offset": self.scroll.get_offset()}
             )
             self.mili.rect({"color": (common.cond(it, *common.BTN_COLS) + 5,) * 3})
-            self.mili.text(txt, {"size": self.mult(20), "color": col})
+            self.mili.text(
+                txt,
+                {
+                    "size": self.mult(20),
+                    "color": col,
+                    "cache": "auto",
+                },
+            )
             if it.left_just_released:
                 callback()
 
@@ -300,6 +340,17 @@ class TierlistSettingsMenu(common.UIComponent):
             buttons=[(30, "refresh", self.action_refresh_distribution_data)],
         )
 
+    def ui_copy_from(self):
+        self.uicommon_setting(
+            "Copy Tiers Settings From",
+            self.copyfrom_entry,
+            None,
+            "",
+            "22",
+            "46",
+            buttons=[(30, "check_circle", self.action_copy_from)],
+        )
+
     def get_settings_entry(self, i, value, suffix):
         string = f"{i}_{suffix}"
         if string in self.settings_entries:
@@ -313,6 +364,38 @@ class TierlistSettingsMenu(common.UIComponent):
         self.settings_entries[string] = entry
         return entry
 
+    def action_copy_from(self):
+        tierlist = self.appdata.tierlists.get(self.copyfrom_entry.texts, None)
+        if tierlist is None:
+            alert.alert(
+                "Inexistent Tierlist Error",
+                f"The tiers settings could not be copied from '{self.copyfrom_entry.texts}' because that tierlist doesn't exist. Did you make any typos?",
+            )
+            self.copyfrom_entry.set_text("")
+            return
+        self.copyfrom_entry.set_text("")
+        self.settings_entries = {}
+        for i, other_setting in enumerate(tierlist.tiers_settings):
+            if i <= len(self.tierlist.tiers_settings) - 1:
+                self.tierlist.tiers_settings[i] = other_setting.copy()
+            else:
+                self.tierlist.tiers_settings.append(other_setting.copy())
+                self.tierlist.tiers.append([])
+
+    def action_move_up(self, i, settings):
+        ts = settings.pop(i)
+        settings.insert(i - 1, ts)
+        dt = self.tierlist.tiers.pop(i)
+        self.tierlist.tiers.insert(i - 1, dt)
+        self.settings_entries = {}
+
+    def action_move_down(self, i, settings):
+        ts = settings.pop(i)
+        settings.insert(i + 1, ts)
+        dt = self.tierlist.tiers.pop(i)
+        self.tierlist.tiers.insert(i + 1, dt)
+        self.settings_entries = {}
+
     def action_refresh_only_category(self):
         self.tierlist.only_category = ""
         self.only_category_entry.set_text("")
@@ -325,13 +408,38 @@ class TierlistSettingsMenu(common.UIComponent):
         self.tierlist.distribution_data = common.DISTRIBUTION
         self.distribution_data_entry.set_text(common.DISTRIBUTION)
 
-    def action_delete_tier(self):
-        self.add_next_setting = False
+    def action_delete_tier(self, i, settings):
         self.settings_entries = {}
+        now = datetime.datetime.now()
+        date_str = (
+            str(now).split(".")[0].replace("-", "_").replace(" ", "_").replace(":", "_")
+        )
+        path = f"backups/tierlist_{self.tierlist.name}_backup_{date_str}"
+        with open(path, "w", encoding="utf-8", errors="replace") as file:
+            json.dump(self.tierlist.save(), file, default=common.fallback_serializer)
+        alert.alert(
+            "Backup Created",
+            f"Since you deleted a tier, an irreverible action, a backup of the tierlist before this action has been created in '{path}'",
+            False,
+        )
+        settings.pop(i)
+        self.tierlist.tiers.pop(i)
 
     def action_delete_tierlist(self, btn_index):
         if btn_index == 1:
             return
+        now = datetime.datetime.now()
+        date_str = (
+            str(now).split(".")[0].replace("-", "_").replace(" ", "_").replace(":", "_")
+        )
+        path = f"backups/tierlist_{self.tierlist.name}_backup_{date_str}"
+        with open(path, "w", encoding="utf-8", errors="replace") as file:
+            json.dump(self.tierlist.save(), file, default=common.fallback_serializer)
+        alert.alert(
+            "Backup Created",
+            f"Since you deleted the tierlist, an irreverible action, a backup of it before this action has been created in '{path}'",
+            False,
+        )
         self.app.menu = self.app.main_menu
         self.appdata.tierlists.pop(self.tierlist.name, None)
         if os.path.exists(f"user_data/tierlists/{self.tierlist.name}.json"):
@@ -340,12 +448,16 @@ class TierlistSettingsMenu(common.UIComponent):
     def can_back(self):
         return self.app.tierlist.name.lower() == self.name_entry.text
 
+    def action_back(self):
+        self.tierlist.save_file()
+
     def event(self, e):
         self.event_scroll(e)
         self.name_entry.event(e)
         self.only_category_entry.event(e)
         self.image_h_entry.event(e)
         self.distribution_data_entry.event(e)
+        self.copyfrom_entry.event(e)
         for entry in self.settings_entries.values():
             entry.event(e)
         if e.type == pygame.KEYDOWN:

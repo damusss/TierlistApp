@@ -25,7 +25,7 @@ class AlertData:
                     "alpha": 180,
                     "fill": True,
                     "fill_color": "black",
-                    "cache": mili.ImageCache.get_next_cache(),
+                    "cache": "auto",
                 },
             )
             with self.mili.begin(
@@ -38,6 +38,7 @@ class AlertData:
                         "size": self.system.app.menu.mult(30),
                         "color": "red" if self.error else "white",
                         "align": "center",
+                        "cache": "auto",
                     },
                     None,
                     {"align": "center"},
@@ -50,6 +51,7 @@ class AlertData:
                         "wraplen": "100",
                         "slow_grow": True,
                         "growx": False,
+                        "cache": "auto",
                     },
                     (0, 0, parent.data.rect.w, 0),
                 )
@@ -61,7 +63,13 @@ class AlertData:
                         self.mili.rect(
                             {"color": (common.cond(it, *common.BTN_COLS),) * 3}
                         )
-                        self.mili.text(option, {"size": self.system.app.menu.mult(25)})
+                        self.mili.text(
+                            option,
+                            {
+                                "size": self.system.app.menu.mult(25),
+                                "cache": "auto",
+                            },
+                        )
                         if it.left_just_released:
                             self.system.current_alert = None
                             if self.callback:

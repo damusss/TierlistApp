@@ -40,6 +40,7 @@ class Entryline:
         self.files = files
         self.entry_rect = pygame.Rect()
         self.lowercase = lowercase
+        self.cache = mili.TextCache()
         self.check()
 
     @property
@@ -111,10 +112,14 @@ class Entryline:
                 self.set_cursor_on()
                 self.add(evtxt)
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_BACKSPACE and event.mod & pygame.KMOD_CTRL:
+                if event.key == pygame.K_BACKSPACE and (
+                    event.mod & pygame.KMOD_CTRL or event.mod & pygame.KMOD_META
+                ):
                     self.text = ""
                     self.cursor = 0
-                elif event.key == pygame.K_v and event.mod & pygame.KMOD_CTRL:
+                elif event.key == pygame.K_v and (
+                    event.mod & pygame.KMOD_CTRL or event.mod & pygame.KMOD_META
+                ):
                     txt = pygame.scrap.get_text().strip()
                     if self.lowercase:
                         txt = txt.lower()
@@ -122,8 +127,14 @@ class Entryline:
                         for char in FILE_FORBIDDEN:
                             txt = txt.replace(char, "")
                     self.add(txt)
-                elif event.key == pygame.K_c and event.mod & pygame.KMOD_CTRL:
+                elif event.key == pygame.K_c and (
+                    event.mod & pygame.KMOD_CTRL or event.mod & pygame.KMOD_META
+                ):
                     pygame.scrap.put_text(self.texts)
+                elif event.key == pygame.K_BACKSPACE and (
+                    event.mod & pygame.KMOD_CTRL or event.mod & pygame.KMOD_META
+                ):
+                    self.set_text("")
                 else:
                     self.set_cursor_on()
                     if event.key == pygame.K_LEFT:
@@ -135,11 +146,7 @@ class Entryline:
                     elif event.key == pygame.K_DELETE:
                         self.canc()
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == pygame.BUTTON_LEFT:
-            if self.entry_rect.collidepoint(event.pos):
-                self.focused = True
-                self.set_cursor_on()
-            else:
-                self.focused = False
+            self.focused = False
 
     def update(self):
         if pygame.time.get_ticks() - self.cursor_time >= 350:
@@ -201,6 +208,7 @@ class Entryline:
                 {
                     "align": "center",
                     "offset": (-offsetx, 0),
+                    "blocking": False,
                     "post_draw_func": functools.partial(
                         self.draw_cursor, size.x, offsetx
                     ),
@@ -214,6 +222,10 @@ class Entryline:
                     {
                         "color": (txtcol if self.text else (120, 120, 120)),
                         "size": mult(20 if txtsize is None else txtsize),
+                        "cache": self.cache,
                     },
                 )
+            if interaction.left_just_released:
+                self.focused = True
+                self.set_cursor_on()
             self.entry_rect = interaction.data.absolute_rect.copy()
