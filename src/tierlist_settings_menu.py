@@ -61,6 +61,7 @@ class TierlistSettingsMenu(common.UIComponent):
                 self.ui_copy_from()
                 self.ui_tiers_settings()
                 self.ui_marked()
+                self.mili.element((0, 0, 0, self.mult(10)))
                 self.ui_action_btns()
                 self.ui_help()
 
@@ -79,6 +80,7 @@ class TierlistSettingsMenu(common.UIComponent):
                 "Toggle Show Numbers: UI Button/N",
                 "Only Show Marked: UI Button/R",
                 "Take Picture of Tierlist: UI Button/C",
+                "Toggle Change Tierlist Menu: UI Button/Y",
                 "Mark/Unmark (While Selected): UI Button/R",
                 "Search (While Selected): UI Button/A",
                 "Copy Image to Clipboard (While Selected): UI Button/I",
@@ -101,7 +103,7 @@ class TierlistSettingsMenu(common.UIComponent):
                 ):
                     align = [pygame.FONT_LEFT, pygame.FONT_RIGHT]
                     for i, string in enumerate(helpstr.split(":")):
-                        it = self.mili.element(None, {"fillx": "50"})
+                        it = self.mili.element(None, {"fillx": "50", "update_id": "cursor"})
                         self.mili.text(
                             string,
                             {
@@ -144,20 +146,22 @@ class TierlistSettingsMenu(common.UIComponent):
                 "spacing": 1,
                 "pad": 1,
                 "anchor": "center",
+                "grid_align": "center",
                 "axis": "x",
                 "offset": self.scroll.get_offset(),
+                "grid": True,
             },
         ):
             for name in list(self.tierlist.marked):
                 image = self.appdata.images.get(
                     name, mili.icon.get_google(common.HOURGLASS)
                 )
-                it = self.mili.element((0, 0, 100 * self.appdata.image_ratio, 100))
+                it = self.mili.element((0, 0, 100 * self.appdata.image_ratio, 100), {"update_id": "cursor"})
                 self.mili.image(
                     image,
                     {
                         "cache": "auto",
-                        "alpha": common.cond(it, *common.ALPHAS),
+                        "alpha": common.cond(it, 255, 150, 60),
                     },
                 )
                 if it.left_just_released:
@@ -222,7 +226,7 @@ class TierlistSettingsMenu(common.UIComponent):
             )
             i += 1
         it = self.mili.element(
-            (0, 0, self.mult(40), self.mult(40)), {"offset": self.scroll.get_offset()}
+            (0, 0, self.mult(40), self.mult(40)), {"offset": self.scroll.get_offset(), "update_id": "cursor"}
         )
         self.mili.image(
             mili.icon.get_google("add", "white"),
@@ -245,6 +249,7 @@ class TierlistSettingsMenu(common.UIComponent):
 
     def ui_action_btns(self):
         for txt, callback, col in [
+            ("Create Backup", self.action_create_backup, "white"),
             (
                 "Delete Tierlist",
                 partial(
@@ -259,7 +264,7 @@ class TierlistSettingsMenu(common.UIComponent):
             ),
         ]:
             it = self.mili.element(
-                None, {"fillx": "30", "offset": self.scroll.get_offset()}
+                None, {"fillx": "30", "offset": self.scroll.get_offset(), "update_id": "cursor"}
             )
             self.mili.rect({"color": (common.cond(it, *common.BTN_COLS) + 5,) * 3})
             self.mili.text(
@@ -279,14 +284,14 @@ class TierlistSettingsMenu(common.UIComponent):
             self.name_entry,
             None,
             "name",
-            "21.5",
-            "45",
+            "22",
+            "46",
             buttons=[
                 (
-                    30
+                    30,
+                    "sync"
                     if self.name_entry.text.lower() != self.tierlist.name.lower()
                     else None,
-                    "sync",
                     partial(
                         self.appdata.rename_tierlist,
                         self.tierlist,
@@ -408,19 +413,29 @@ class TierlistSettingsMenu(common.UIComponent):
         self.tierlist.distribution_data = common.DISTRIBUTION
         self.distribution_data_entry.set_text(common.DISTRIBUTION)
 
+    def action_create_backup(self):
+        now = datetime.datetime.now()
+        date_str = (
+            str(now).split(".")[0].replace("-", "_").replace(" ", "_").replace(":", "_")
+        )
+        path = f"backups/tierlist_{self.tierlist.name}_{date_str}"
+        with open(path, "w", encoding="utf-8", errors="replace") as file:
+            json.dump(self.tierlist.save(), file, default=common.fallback_serializer)
+        alert.message(
+            f"Backup created for {self.tierlist.name.upper().replace('_', ' ')}"
+        )
+
     def action_delete_tier(self, i, settings):
         self.settings_entries = {}
         now = datetime.datetime.now()
         date_str = (
             str(now).split(".")[0].replace("-", "_").replace(" ", "_").replace(":", "_")
         )
-        path = f"backups/tierlist_{self.tierlist.name}_backup_{date_str}"
+        path = f"backups/tierlist_{self.tierlist.name}_autobackup_{date_str}"
         with open(path, "w", encoding="utf-8", errors="replace") as file:
             json.dump(self.tierlist.save(), file, default=common.fallback_serializer)
-        alert.alert(
-            "Backup Created",
-            f"Since you deleted a tier, an irreverible action, a backup of the tierlist before this action has been created in '{path}'",
-            False,
+        alert.message(
+            f"Since you deleted a tier, an irreversible action, a backup of the tierlist before this action has been created in '{path}'",
         )
         settings.pop(i)
         self.tierlist.tiers.pop(i)
@@ -432,13 +447,11 @@ class TierlistSettingsMenu(common.UIComponent):
         date_str = (
             str(now).split(".")[0].replace("-", "_").replace(" ", "_").replace(":", "_")
         )
-        path = f"backups/tierlist_{self.tierlist.name}_backup_{date_str}"
+        path = f"backups/tierlist_{self.tierlist.name}_autobackup_{date_str}"
         with open(path, "w", encoding="utf-8", errors="replace") as file:
             json.dump(self.tierlist.save(), file, default=common.fallback_serializer)
-        alert.alert(
-            "Backup Created",
-            f"Since you deleted the tierlist, an irreverible action, a backup of it before this action has been created in '{path}'",
-            False,
+        alert.message(
+            f"Since you deleted the tierlist, an irreversible action, a backup of it before this action has been created in '{path}'",
         )
         self.app.menu = self.app.main_menu
         self.appdata.tierlists.pop(self.tierlist.name, None)

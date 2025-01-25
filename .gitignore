@@ -1,0 +1,15 @@
+__pycache__/
+.*
+!.gitignore
+backups/
+user_data/categories/*/
+!user_data/categories/61/
+!user_data/categories/61/*
+!user_data/categories/68/
+!user_data/categories/68/*
+screenshots/
+.VSCodeCounter/
+custom_chars/0$*
+test*
+temp*
+*.exe

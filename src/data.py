@@ -1,6 +1,5 @@
 import os
 import pygame
-import threading
 import time
 import requests
 import bs4
@@ -10,6 +9,9 @@ import datetime
 import pathlib
 from src import common
 from src import alert
+
+if common.THREADED:
+    import threading
 
 for folder in ["user_data", "backups", "custom_chars", "screenshots"]:
     if not os.path.exists(folder):
@@ -40,7 +42,7 @@ def request_wrapper(action_message, *args, **kwargs):
 
 
 class CategoryData:
-    def __init__(self, data, uid=-1):
+    def __init__(self, data: "Data", uid=-1):
         self.data = data
         self.name, self.uid, self.links = "", uid, [""]
         self.downloading, self.only_cover = False, False
@@ -76,6 +78,29 @@ class CategoryData:
             "auto": self.auto,
         }
 
+    def remove_old_covers(self):
+        if self.name.strip() == "":
+            return
+        cover_files = [
+            f"{self.name}" if i == 0 else f"{self.name}_{i + 1}"
+            for i in range(len(self.links))
+        ]
+        for file in cover_files:
+            path = f"user_data/categories/{common.ANIMES_UID}/{file}"
+            if os.path.exists(path):
+                os.remove(path)
+
+    def erase_items(self):
+        if self.uid == common.ANIMES_UID:
+            return
+        path = f"user_data/categories/{self.uid}"
+        if os.path.exists(path):
+            for file in os.listdir(path):
+                try:
+                    os.remove(f"{path}/{file}")
+                except OSError:
+                    ...
+
     def image_prefixed(self, name):
         return f"{self.uid}|{name}"
 
@@ -96,8 +121,12 @@ class CategoryData:
             if link is not None:
                 to_download = self.cached[link]
             remaining = to_download.difference(set(self.downloaded))
+            if self.only_cover:
+                string = f"({self.covers_downloaded}/{len(self.links)})"
+            else:
+                string = f"({len(to_download) - len(remaining)}{f'+{self.covers_downloaded}' if include_covers else ''}/{len(to_download)}{f'+{len(self.links)}' if include_covers else ''})"
             return (
-                f"({len(to_download)-len(remaining)}{f"+{self.covers_downloaded}" if include_covers else ""}/{len(to_download)}{f"+{len(self.links)}" if include_covers else ""})",
+                string,
                 (
                     len(remaining) == 0
                     and (
@@ -106,14 +135,18 @@ class CategoryData:
                 ),
             )
         else:
-            return f"({len(self.downloaded)}/?)", False
+            return (
+                f"({len(self.downloaded)}{f'+{self.covers_downloaded}' if include_covers else ''}/?)",
+                False,
+            )
 
     def download(self):
+        self.abort = False
         if not self.auto:
             if not os.path.exists(f"user_data/categories/{self.uid}"):
                 os.mkdir(f"user_data/categories/{self.uid}")
             self.update_downloaded()
-            self.data.load_category_images(self)
+            self.data.load_category_images(self, True)
             return
         if self.name.strip() == "":
             alert.alert(
@@ -122,11 +155,16 @@ class CategoryData:
             )
             return
         self.downloading = True
-        thread = threading.Thread(target=self.thread_download)
-        thread.start()
+        self.data.downloading_amount += 1
+        if common.THREADED:
+            thread = threading.Thread(target=self.thread_download)
+            thread.start()
+        else:
+            self.thread_download()
 
     def thread_download(self):
         self.update_downloaded()
+        cancel = False
         try:
             character_links = set()
             for i, link in enumerate(self.links):
@@ -138,21 +176,39 @@ class CategoryData:
             for char_link in character_links:
                 self.async_download_anime_character(char_link, self.name)
         except SystemExit:
-            print("DOWNLOAD CANCELED")
+            alert.message(f"Download of {self.name} canceled")
+            cancel = True
+        except Exception as e:
+            alert.alert(
+                "Unexpected Download Error",
+                f"An error in the code occurred so the category {self.name} could not download properly: '{e}'",
+            )
         self.downloading = False
         self.to_reload = True
+        self.data.downloading_amount -= 1
+        if not cancel:
+            alert.message(f"Finished downloading {self.name.replace('_', ' ').title()}")
 
-    def async_download_image(self, img_url, save_path):
+    def async_download_image(self, img_url, save_path, try_large=False):
         if self.abort:
             raise SystemExit
         try:
-            img_response = request_wrapper(
-                f"Failed to download image from {img_url}, to save in {save_path}",
-                img_url,
-            )
-            if img_response:
+            try:
+                if not try_large:
+                    raise requests.HTTPError
+                left, right = img_url.rsplit(".", 1)
+                img_response = requests.get(left + "l." + right)
+                img_response.raise_for_status()
                 with open(save_path, "wb") as img_file:
                     img_file.write(img_response.content)
+            except requests.HTTPError:
+                img_response = request_wrapper(
+                    f"Failed to download image from {img_url}, to save in {save_path}",
+                    img_url,
+                )
+                if img_response:
+                    with open(save_path, "wb") as img_file:
+                        img_file.write(img_response.content)
             self.update_downloaded()
         except UnicodeError as e:
             alert.alert(
@@ -170,17 +226,17 @@ class CategoryData:
             self.downloaded = []
         if self.uid != common.ANIMES_UID and self.auto:
             self.data.categories[common.ANIMES_UID].update_downloaded()
-        if not os.path.exists("user_data/categories/0"):
+        if not os.path.exists(f"user_data/categories/{common.ANIMES_UID}"):
             self.covers_downloaded = 0
             return
         self.covers_downloaded = 0
         if not self.auto:
             return
         cover_files = [
-            f"{self.name}" if i == 0 else f"{self.name}_{i+1}"
+            f"{self.name}" if i == 0 else f"{self.name}_{i + 1}"
             for i in range(len(self.links))
         ]
-        for file in os.listdir("user_data/categories/0"):
+        for file in os.listdir(f"user_data/categories/{common.ANIMES_UID}"):
             file = file.split(".")[0]
             for cover in cover_files:
                 if file == cover:
@@ -202,7 +258,7 @@ class CategoryData:
             print(f"Downloading anime cover {char_name} ({img_url})")
         else:
             print(f"Downloading character {char_name} of {anime_name} ({img_url})")
-        self.async_download_image(img_url, path)
+        self.async_download_image(img_url, path, is_anime)
         self.data.load_recent_image(
             self.data.categories[common.ANIMES_UID] if is_anime else self, path
         )
@@ -251,7 +307,7 @@ class CategoryData:
             not found
             or img_link == r"https://cdn.myanimelist.net/images/questionmark_23.gif"
         ):
-            print(
+            alert.message(
                 f"Character {char_name} of {anime_name} has no image (or unsupported image) on MAL!"
             )
             if char_name not in self.no_image:
@@ -261,15 +317,20 @@ class CategoryData:
                     cont.remove(char_name)
 
     def async_download_anime_characters(self, name, raw_link, idx=0):
+        if self.abort:
+            raise SystemExit
         only_anime = False or self.only_cover
         chars_link = raw_link + "/characters"
-        cname = name if idx == 0 else f"{name}_{idx+1}"
+        cname = name if idx == 0 else f"{name}_{idx + 1}"
         if not only_anime and not os.path.exists(f"user_data/categories/{self.uid}"):
             os.mkdir(f"user_data/categories/{self.uid}")
-        if not os.path.exists("user_data/categories/0"):
-            os.mkdir("user_data/categories/0")
+        if not os.path.exists(f"user_data/categories/{common.ANIMES_UID}"):
+            os.mkdir(f"user_data/categories/{common.ANIMES_UID}")
 
-        if os.path.exists(f"user_data/categories/0/{cname}.png") and only_anime:
+        if (
+            os.path.exists(f"user_data/categories/{common.ANIMES_UID}/{cname}.png")
+            and only_anime
+        ):
             print(f"Skipping only-cover anime {name}")
             return set()
 
@@ -285,7 +346,7 @@ class CategoryData:
             return set()
 
         soup = bs4.BeautifulSoup(response.content, "html.parser")
-        if not os.path.exists(f"user_data/categories/0/{cname}.png"):
+        if not os.path.exists(f"user_data/categories/{common.ANIMES_UID}/{cname}.png"):
             cover = soup.find("div", {"class": "leftside"})
             cover_link = list(list(list(cover.children)[1].children)[1].children)[
                 1
@@ -299,15 +360,17 @@ class CategoryData:
             print(f"Anime cover {cname} was already downloaded")
             if only_anime:
                 return set()
-
         if not only_anime:
             try:
+                cached = set()
                 container = soup.find(
                     "div",
                     {"class": "anime-character-container js-anime-character-container"},
                 )
                 to_download = set()
                 for child in container.children:
+                    if self.abort:
+                        raise SystemExit
                     child: bs4.element.Tag = self.async_recursive_get_first_children(
                         child, 4
                     )
@@ -316,6 +379,7 @@ class CategoryData:
                     if thischarname not in self.no_image:
                         if thischarname not in self.cached[raw_link]:
                             self.cached[raw_link].add(thischarname)
+                        cached.add(thischarname)
                         if thischarname not in self.downloaded:
                             to_download.add(character_link)
                         else:
@@ -326,6 +390,9 @@ class CategoryData:
                         print(
                             f"Character {thischarname} of {name} has no image on MAL!"
                         )
+                if raw_link in self.cached:
+                    for item in self.cached[raw_link].difference(cached):
+                        self.cached[raw_link].remove(item)
                 return to_download
             except Exception:
                 alert.alert(
@@ -356,6 +423,7 @@ class TierlistData:
         self.marked = set()
         self.ui_tier_name_percentage = 10
         self.distribution_data = common.DISTRIBUTION
+        self.ignore_first = False
 
     def load(self, data):
         self.name = data["name"]
@@ -367,6 +435,12 @@ class TierlistData:
         self.marked = set(data["marked"])
         self.ui_tier_name_percentage = data["ui_tier_name_percentage"]
         self.distribution_data = data["distribution_data"]
+        self.ignore_first = data.get("ignore_first", False)
+        all = []
+        for t in self.tiers:
+            all += t
+        for item in set(all).difference(self.tiers_all):
+            self.tiers_all.add(item)
         return self
 
     def save(self):
@@ -380,6 +454,7 @@ class TierlistData:
             "marked": self.marked,
             "ui_tier_name_percentage": self.ui_tier_name_percentage,
             "distribution_data": self.distribution_data,
+            "ignore_first": self.ignore_first,
         }
 
     def save_file(self):
@@ -393,6 +468,7 @@ class Data:
         self.load()
 
     def load(self):
+        self.downloading_amount = 0
         for folder in os.listdir("user_data/categories"):
             if pathlib.Path(f"user_data/categories/{folder}").is_dir():
                 if len(os.listdir(f"user_data/categories/{folder}")) <= 0:
@@ -459,23 +535,27 @@ class Data:
             self.custom_chars_listdir = os.listdir("custom_chars")
         else:
             self.custom_chars_listdir = []
-        for category in self.categories.values():
-            self.load_category_images(category)
+        self.startup_to_load_categories = list(self.categories.values())
+        # for category in self.categories.values():
+        #    self.load_category_images(category)
 
-    def load_category_images(self, category: CategoryData):
-        thread = threading.Thread(
-            target=self.thread_load_category_images, args=(category,)
-        )
-        thread.start()
+    def load_category_images(self, category: CategoryData, force=False):
+        if common.THREADED:
+            thread = threading.Thread(
+                target=self.thread_load_category_images, args=(category, force)
+            )
+            thread.start()
+        else:
+            self.thread_load_category_images(category, force)
 
-    def thread_load_category_images(self, category: CategoryData):
+    def thread_load_category_images(self, category: CategoryData, force=False):
         folder = f"user_data/categories/{category.uid}"
         if not os.path.exists(folder):
             self.to_load_categories -= 1
             return
         for filename in os.listdir(folder):
             string = category.image_prefixed(filename.split(".")[0])
-            if string in self.images:
+            if string in self.images and not force:
                 continue
             found = False
             for test_str in [
@@ -511,7 +591,7 @@ class Data:
             "Error Loading Image",
             f"Could not load image {path} due to unexpected error '{e}'. Press 'Delete' to delete it.",
             options=("Delete", "Understood"),
-            callback=lambda: os.remove(path),
+            callback=lambda *args: os.remove(path),
         )
 
     def confirm_delete(self, btn, path):
@@ -583,7 +663,7 @@ class Data:
         tierlist = TierlistData()
         self.tierlists[tierlist.name] = tierlist
 
-    def rename_category(self, category, name, entry):
+    def rename_category(self, category: CategoryData, name, entry):
         if name == "animes":
             entry.set_text("error_name_is_reserved")
             return
@@ -591,10 +671,14 @@ class Data:
             if cat is not category and cat.name.lower() == name.lower():
                 entry.set_text("error_name_is_duplicate")
                 return
+        category.remove_old_covers()
+        oldname = category.name
         if category.name in self.categories_uids:
             del self.categories_uids[category.name]
         category.name = name.lower()
         self.categories_uids[name] = category.uid
+        if oldname != "":
+            alert.message(f"Category was renamed from {oldname} to {category.name}")
 
     def rename_tierlist(self, tierlist, name, entry):
         name = name.lower()
@@ -605,9 +689,11 @@ class Data:
             del self.tierlists[tierlist.name]
         if os.path.exists(f"user_data/tierlists/{tierlist.name}.json"):
             os.remove(f"user_data/tierlists/{tierlist.name}.json")
+        oldname = tierlist.name
         tierlist.name = name
         self.tierlists[tierlist.name] = tierlist
         tierlist.save_file()
+        alert.message(f"Tierlist was renamed from {oldname} to {tierlist.name}")
 
     def taskbar_h_change(self):
         desktop = pygame.display.get_desktop_sizes()[0]
@@ -636,7 +722,7 @@ class Data:
         )
         for tierlist in self.tierlists.values():
             tierlist.save_file()
-        print("Data Saved")
+        alert.message("All data was saved")
 
     def create_backup(self):
         now = datetime.datetime.now()
@@ -654,10 +740,16 @@ class Data:
         shutil.copyfile("user_data/categories.json", f"{backup_folder}categories.json")
         shutil.copyfile("user_data/settings.json", f"{backup_folder}settings.json")
         shutil.copytree("user_data/tierlists", f"{backup_folder}tierlists")
+        alert.message(f"Backup created at backups/{folder_name}/")
 
     def apply_custom_chars(self, filter=None):
-        thread = threading.Thread(target=self.thread_apply_custom_chars, args=(filter,))
-        thread.start()
+        if common.THREADED:
+            thread = threading.Thread(
+                target=self.thread_apply_custom_chars, args=(filter,)
+            )
+            thread.start()
+        else:
+            self.thread_apply_custom_chars(filter)
 
     def thread_apply_custom_chars(self, filter):
         if not os.path.exists("custom_chars"):
@@ -707,7 +799,7 @@ class Data:
                 if len(found_categories) > 1:
                     alert.alert(
                         "Error Applying Custom Character",
-                        f"Custom character {char} was found in multiple categories {tuple([f"{cat.name}:{cat.uid}" for cat in found_categories])} so it could not be applied. Prefix it with the category name/ID and a '$' to select the category.",
+                        f"Custom character {char} was found in multiple categories {tuple([f'{cat.name}:{cat.uid}' for cat in found_categories])} so it could not be applied. Prefix it with the category name/ID and a '$' to select the category.",
                     )
                     continue
                 category = found_categories[0]
@@ -715,3 +807,5 @@ class Data:
             image = pygame.image.load(f"custom_chars/{filename}").convert_alpha()
             self.images[itemstring] = image
         self.loaded_custom_chars = []
+        if filter is None:
+            alert.message("Custom characters applied")

@@ -2,6 +2,7 @@ import pygame
 import mili
 import datetime
 from src import common
+from src import alert
 from src.tierlist_view import TierlistView
 
 
@@ -74,6 +75,7 @@ class ScreenshotWindowManager:
         self.screenshot_ready = False
 
     def screenshot_ui(self):
+        self.kmods = pygame.key.get_mods()
         self.lowest_card_bottom = 0
         self.mili.rect({"color": common.BG_COL})
         with self.mili.begin(None, mili.FILL | mili.PADLESS):
@@ -103,7 +105,7 @@ class ScreenshotWindowManager:
             surf.subsurface((0, 0, surf.width, self.lowest_card_bottom)),
             f"screenshots/{self.tierlist.name}_{date_str}.png",
         )
-        print(
+        alert.message(
             f"Saved screenshot of tierlist {self.tierlist.name} to 'screenshots/{self.tierlist.name}_{date_str}.png'"
         )
 

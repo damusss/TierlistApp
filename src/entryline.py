@@ -187,7 +187,10 @@ class Entryline:
             mili_.rect({"color": (bgcol,) * 3, "border_radius": 0})
             mili_.rect(
                 {
-                    "color": (outlinecol,) * 3,
+                    "color": (
+                        outlinecol + (30 * (interaction.hovered or self.focused)),
+                    )
+                    * 3,
                     "outline": 1,
                     "border_radius": 0,
                     "draw_above": True,

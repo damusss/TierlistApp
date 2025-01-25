@@ -3,6 +3,7 @@ import pygame
 from src import common
 from src import entryline
 from src import data
+from src import alert
 from functools import partial
 
 
@@ -38,6 +39,7 @@ class SettingsMenu(common.UIComponent):
         self.rect_r = pygame.Rect()
 
     def update(self):
+        self.search_entry.update()
         self.show_ids = pygame.key.get_pressed()[pygame.K_t] and (
             pygame.key.get_mods() & pygame.KMOD_CTRL
             or pygame.key.get_mods() & pygame.KMOD_META
@@ -49,7 +51,11 @@ class SettingsMenu(common.UIComponent):
                 "General Settings",
                 {"size": self.mult(40), "cache": "auto"},
             )
-            self.uicommon_back(self.app.main_menu)
+            self.uicommon_back(
+                self.app.main_menu
+                if self.app.settings_back is None
+                else self.app.settings_back
+            )
             with self.mili.begin(
                 None,
                 {"default_align": "center", "pad": 0, "spacing": 0}
@@ -67,6 +73,7 @@ class SettingsMenu(common.UIComponent):
                     },
                 ) as cl:
                     self.ui_base_settings()
+                    self.mili.element((0, 0, 0, self.mult(10)))
                     self.ui_action_btns()
                     self.ui_colors()
                     self.ui_utilities()
@@ -174,7 +181,7 @@ class SettingsMenu(common.UIComponent):
                 i += 1
         it = self.mili.element(
             (0, 0, self.mult(40), self.mult(40)),
-            {"offset": self.scroll_left.get_offset()},
+            {"offset": self.scroll_left.get_offset(), "update_id": "cursor"},
         )
         self.mili.image(
             mili.icon.get_google("add", "white"),
@@ -188,73 +195,10 @@ class SettingsMenu(common.UIComponent):
         self.appdata.color_vars = new_colors
 
     def ui_categories(self):
-        with self.mili.begin(
-            None,
-            {"resizey": True, "fillx": True}
-            | mili.PADLESS
-            | mili.CENTER
-            | mili.X
-            | {"offset": self.scroll_right.get_offset()},
-        ):
-            color = "white"
-            if any([cat.downloading for cat in self.appdata.categories.values()]):
-                color = "orange"
-            self.mili.text_element(
-                "Categories",
-                {
-                    "size": self.mult(26),
-                    "color": color,
-                    "cache": "auto",
-                },
-                None,
-            )
-            it = self.mili.element((0, 0, self.mult(30), self.mult(30)))
-            self.mili.rect({"color": (common.cond(it, *common.BTN_COLS),) * 3})
-            self.mili.image(
-                mili.icon.get_google(
-                    "close" if self.appdata.auto_download else "download"
-                ),
-                {
-                    "cache": "auto",
-                    "alpha": common.cond(it, *common.ALPHAS),
-                },
-            )
-            if it.left_just_released:
-                self.appdata.auto_download = not self.appdata.auto_download
-            self.search_entry.ui(
-                self.mili, (0, 0, 0, self.mult(35)), {"fillx": "25"}, self.mult
-            )
-        downloaded = len(self.appdata.categories[common.ANIMES_UID].downloaded)
-        todownload = sum(
-            [
-                len(cat.links) if cat.auto else 0
-                for cat in self.appdata.categories.values()
-            ]
-        )
-        self.mili.text_element(
-            f"Downloaded {downloaded}/{todownload} anime covers",
-            {
-                "size": self.mult(22),
-                "color": "yellow" if downloaded < todownload else "white",
-                "cache": "auto",
-            },
-            None,
-            {"offset": self.scroll_right.get_offset()},
-        )
-        self.mili.line_element(
-            [("-100", 0), ("100", 0)],
-            {"size": 1, "color": (50,) * 3},
-            (0, 0, 0, 5),
-            {"fillx": "100", "offset": self.scroll_right.get_offset()},
-        )
+        self.ui_categories_title()
         first = True
-        done = 0
-        stop = False
-        didamount = 0
-        totalamount = 0
-        milid = 10000
-        prev_oc = False
-        prev_manual = False
+        stop = prev_oc = prev_manual = False
+        done, didamount, totalamount, milid = 0, 0, 0, 5000
         only_oc = self.search_entry.texts == "$oc"
         only_manual = self.search_entry.texts == "$manual"
         for i, category in enumerate(
@@ -295,12 +239,7 @@ class SettingsMenu(common.UIComponent):
                 )
                 prev_manual = True
             if not first and not stop:
-                self.mili.line_element(
-                    [("-100", 0), ("100", 0)],
-                    {"size": 1, "color": (50,) * 3},
-                    (0, 0, 0, 5),
-                    {"fillx": "100", "offset": self.scroll_right.get_offset()},
-                )
+                self.ui_categories_line()
             if category.uid == common.ANIMES_UID:
                 continue
             totalamount += 1 + len(category.links)
@@ -310,7 +249,7 @@ class SettingsMenu(common.UIComponent):
             self.mili.id_checkpoint(milid)
             if self.ui_category(category, i):
                 stop = True
-            milid += 1000
+            milid += 500
             first = False
             didamount += 1 + len(category.links)
         if stop and didamount != totalamount:
@@ -325,9 +264,12 @@ class SettingsMenu(common.UIComponent):
                     "cache": "auto",
                 },
             )
+        self.ui_categories_footer()
+
+    def ui_categories_footer(self):
         it = self.mili.element(
             (0, 0, self.mult(40), self.mult(40)),
-            {"offset": self.scroll_right.get_offset()},
+            {"offset": self.scroll_right.get_offset(), "update_id": "cursor"},
         )
         self.mili.image(
             mili.icon.get_google("add", "white"),
@@ -339,56 +281,85 @@ class SettingsMenu(common.UIComponent):
         if it.left_just_released:
             self.appdata.add_category()
 
+    def ui_categories_title(self):
+        with self.mili.begin(
+            None,
+            {"resizey": True, "fillx": True}
+            | mili.PADLESS
+            | mili.CENTER
+            | mili.X
+            | {"offset": self.scroll_right.get_offset()},
+        ):
+            color = "white"
+            if self.appdata.downloading_amount > 0:
+                color = "orange"
+            self.mili.text_element(
+                "Categories",
+                {
+                    "size": self.mult(26),
+                    "color": color,
+                    "cache": "auto",
+                },
+                None,
+            )
+            it = self.mili.element((0, 0, self.mult(30), self.mult(30)), {"update_id": "cursor"})
+            self.mili.rect({"color": (common.cond(it, *common.BTN_COLS),) * 3})
+            self.mili.image(
+                mili.icon.get_google(
+                    "close" if self.appdata.auto_download else "download"
+                ),
+                {
+                    "cache": "auto",
+                    "alpha": common.cond(it, *common.ALPHAS),
+                },
+            )
+            if it.left_just_released:
+                self.appdata.auto_download = not self.appdata.auto_download
+            self.search_entry.ui(
+                self.mili, (0, 0, 0, self.mult(35)), {"fillx": "25"}, self.mult
+            )
+        downloaded = len(self.appdata.categories[common.ANIMES_UID].downloaded)
+        todownload = sum(
+            [
+                len(cat.links) if cat.auto else 0
+                for cat in self.appdata.categories.values()
+            ]
+        )
+        self.mili.text_element(
+            f"Downloaded {downloaded}/{todownload} anime covers",
+            {
+                "size": self.mult(22),
+                "color": "yellow" if downloaded < todownload else "white",
+                "cache": "auto",
+            },
+            None,
+            {"offset": self.scroll_right.get_offset()},
+        )
+        self.ui_categories_line()
+
+    def ui_categories_line(self):
+        self.mili.line_element(
+            [("-100", 0), ("100", 0)],
+            {"size": 1, "color": (50,) * 3},
+            (0, 0, 0, 5),
+            {"fillx": "100", "offset": self.scroll_right.get_offset()},
+        )
+
     def ui_category(self, category: data.CategoryData, idx):
         name_entry = self.get_category_entryline(category.uid, category.name, False)
-        id_str = (
-            f" [id:{category.uid}] "
-            if self.show_ids
-            else ""
-        )
+        id_str = f" [id:{category.uid}] " if self.show_ids else ""
         extra_str, downloaded_all = category.get_downloaded_of(
             None, include_covers=True
         )
         mainit = [
             self.uicommon_setting(
-                f"{idx}. Name{id_str}",
+                f"{idx}.{id_str}",
                 name_entry,
                 None,
                 "name",
-                "68",
-                ("30" if self.show_ids else "15"),
-                buttons=[
-                    (30, "add", partial(self.action_add_link, category.uid)),
-                    (
-                        30
-                        if name_entry.texts.lower() != category.name.lower()
-                        else None,
-                        "sync",
-                        partial(
-                            self.appdata.rename_category,
-                            category,
-                            name_entry.texts,
-                            name_entry,
-                        ),
-                    ),
-                    (
-                        30,
-                        "refresh"
-                        if not category.auto
-                        else ("close" if category.downloading else "download"),
-                        partial(self.action_stop_download, category.uid)
-                        if category.downloading
-                        else category.download,
-                    ),
-                    (
-                        30,
-                        "menu_book"
-                        if not category.auto
-                        else ("cover" if category.only_cover else "cover_plus"),
-                        partial(self.action_only_cover_auto, category),
-                    ),
-                    (30, "delete", partial(self.action_delete_category, category.uid)),
-                ],
+                "75",
+                ("15" if self.show_ids else "10"),
+                buttons=self.get_category_btns(category, name_entry),
                 namecol="orange"
                 if category.downloading
                 else ("white" if downloaded_all else "yellow"),
@@ -412,6 +383,7 @@ class SettingsMenu(common.UIComponent):
             )
         ]
         if category.downloading:
+            name_entry.focused = False
             name_entry.text = category.name
         if (not category.collapsed and category.auto) or category.downloading:
             for i, link in enumerate(category.links.copy()):
@@ -421,7 +393,7 @@ class SettingsMenu(common.UIComponent):
                 extra_str, downloaded_all = category.get_downloaded_of(link)
                 mainit.append(
                     self.uicommon_setting(
-                        f"Link {i+1} {extra_str}",
+                        f"Link {i + 1}. {extra_str}",
                         link_entry,
                         category.links,
                         i,
@@ -430,7 +402,7 @@ class SettingsMenu(common.UIComponent):
                         [
                             (
                                 30,
-                                "delete",
+                                None if category.downloading else "delete",
                                 partial(self.action_remove_link, category.uid, i),
                             )
                         ],
@@ -439,17 +411,77 @@ class SettingsMenu(common.UIComponent):
                             r"https://myanimelist.net/anime/"
                         )
                         else "red",
-                        ("white" if downloaded_all else "yellow"),
+                        "orange"
+                        if category.downloading
+                        else ("white" if downloaded_all else "yellow"),
                         entrysize=18,
                         scroll=self.scroll_right,
                     )
                 )
                 if category.downloading:
+                    link_entry.focused = False
                     link_entry.text = link
         for it in mainit:
             if it.absolute_rect.bottom > self.app.window.size[1]:
                 return True
         return False
+
+    def get_category_btns(
+        self, category: data.CategoryData, name_entry: entryline.Entryline
+    ):
+        return [
+            (
+                30 if name_entry.texts.lower() != category.name.lower() else None,
+                None if category.downloading else "sync",
+                partial(
+                    self.appdata.rename_category,
+                    category,
+                    name_entry.texts,
+                    name_entry,
+                ),
+            ),
+            (
+                30,
+                "refresh"
+                if not category.auto
+                else ("close" if category.downloading else "download"),
+                partial(self.action_stop_download, category.uid)
+                if category.downloading
+                else category.download,
+            ),
+            (
+                30,
+                None if category.downloading else "add",
+                partial(self.action_add_link, category.uid),
+            ),
+            (
+                30,
+                None
+                if category.downloading
+                else (
+                    "menu_book"
+                    if not category.auto
+                    else ("cover" if category.only_cover else "cover_plus")
+                ),
+                partial(self.action_only_cover_auto, category),
+            ),
+            (
+                30,
+                None if category.downloading else "delete",
+                partial(self.action_delete_category, category.uid)
+                if category.name == ""
+                else (
+                    partial(
+                        alert.alert,
+                        "Confirm Deletion",
+                        f"Are you sure you want to delete the category {category.name} (uid:{category.uid})? The downloaded covers and items will be deleted and you'll need to download them again if you change your mind.",
+                        False,
+                        ["Delete", "Cancel"],
+                        partial(self.action_delete_category, category.uid),
+                    )
+                ),
+            ),
+        ]
 
     def ui_action_btns(self):
         for txt, callback in [
@@ -457,7 +489,7 @@ class SettingsMenu(common.UIComponent):
             ("Create Backup", self.appdata.create_backup),
         ]:
             it = self.mili.element(
-                None, {"fillx": "90", "offset": self.scroll_left.get_offset()}
+                None, {"fillx": "90", "offset": self.scroll_left.get_offset(), "update_id": "cursor"}
             )
             self.mili.rect({"color": (common.cond(it, *common.BTN_COLS) + 5,) * 3})
             self.mili.text(txt, {"size": self.mult(20), "cache": "auto"})
@@ -471,9 +503,11 @@ class SettingsMenu(common.UIComponent):
         elif not category.auto:
             category.auto = True
             category.only_cover = False
+            category.cached = {}
         else:
             category.auto = True
             category.only_cover = True
+            category.cached = {}
 
     def action_get_size_ratio(self):
         try:
@@ -492,13 +526,18 @@ class SettingsMenu(common.UIComponent):
     def action_refresh_screenshot_mult(self):
         self.appdata.screenshot_window_mult = 2
 
-    def action_delete_category(self, uid):
+    def action_delete_category(self, uid, btn=-1):
+        if btn == 1:
+            return
         cat = self.appdata.categories[uid]
         if cat.downloading:
             return
+        cat.remove_old_covers()
+        cat.erase_items()
         if cat.name in self.appdata.categories_uids:
             self.appdata.categories_uids.pop(cat.name)
         del self.appdata.categories[uid]
+        alert.message(f"Category {cat.name} was deleted")
 
     def action_add_link(self, uid):
         cat = self.appdata.categories[uid]

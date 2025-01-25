@@ -5,6 +5,7 @@ import os
 import typing
 from src import entryline
 
+
 if typing.TYPE_CHECKING:
     from main import TierlistApp
 
@@ -18,6 +19,7 @@ IMAGE_H = 70
 DOUBLE_CLICK_TIME = 300
 HOURGLASS = "hourglass_top"
 DISTRIBUTION = "50-100,5-180,180|0.25"
+THREADED = True
 
 
 def fallback_serializer(obj):
@@ -81,7 +83,8 @@ class UIComponent:
 
     def uicommon_back(self, menu_back):
         it = self.mili.element(
-            (0, 0, self.mult(30), self.mult(30)), {"ignore_grid": True, "z": 9999}
+            (0, 0, self.mult(30), self.mult(30)),
+            {"ignore_grid": True, "z": 9999, "update_id": "cursor"},
         )
         self.mili.rect({"color": (cond(it, *BTN_COLS),) * 3})
         self.mili.image(
@@ -104,7 +107,7 @@ class UIComponent:
                 mult30,
                 mult30,
             ),
-            {"ignore_grid": True, "z": 9999},
+            {"ignore_grid": True, "z": 9999, "update_id": "cursor"},
         )
         self.mili.rect({"color": (cond(it, *BTN_COLS),) * 3})
         self.mili.image(
@@ -203,6 +206,7 @@ class UIComponent:
                 "resizey": True,
                 "default_align": "center",
                 "offset": scroll.get_offset() if scroll else (0, 0),
+                "update_id": "cursor" if clickable else None,
             }
             | mili.X
             | mili.PADLESS,
@@ -294,7 +298,10 @@ class UIComponent:
                         (0, 0, size, size),
                     )
                 else:
-                    it = self.mili.element((0, 0, self.mult(size), self.mult(size)))
+                    it = self.mili.element(
+                        (0, 0, self.mult(size), self.mult(size)),
+                        {"update_id": "cursor"},
+                    )
                     if iconname is not None:
                         self.mili.rect({"color": (cond(it, *BTN_COLS),) * 3})
                     self.mili.image(
@@ -306,7 +313,7 @@ class UIComponent:
                             "cache": "auto",
                         },
                     )
-                    if it.left_just_released:
+                    if it.left_just_released and iconname is not None:
                         onclick()
 
     def mult(self, a):

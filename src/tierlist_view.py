@@ -7,6 +7,7 @@ from io import BytesIO
 from PIL import Image
 from src import common
 from src import data
+from src import alert
 
 
 class TierlistView(common.UIComponent):
@@ -51,6 +52,8 @@ class TierlistView(common.UIComponent):
         self.title_h = 0
         self.kmods = 0
         self.animes_only_first = True
+        self.menu_change_tierlist = False
+        self.show_initials = False
         self.set_image_h(common.IMAGE_H)
 
     @property
@@ -119,21 +122,43 @@ class TierlistView(common.UIComponent):
         )
         self.layer_cache.offset = (0, self.title_h)
         self.layer_cache.active = True
+        self.dragging_category = None
+        if (
+            pygame.mouse.get_pressed()[pygame.BUTTON_RIGHT - 1]
+            and self.dragging_obj is not None
+        ):
+            self.dragging_category = self.category_from_name(self.dragging_obj)
+        if (
+            pygame.mouse.get_pressed()[pygame.BUTTON_RIGHT - 1]
+            and self.selected_obj is None
+            and self.selected_category is not None
+            and self.highlighted_category is None
+        ):
+            self.dragging_category = self.selected_category
+        self.show_initials = pygame.key.get_pressed()[pygame.K_g]
 
     def ui(self):
-        with self.mili.begin(None, mili.FILL | mili.PADLESS):
+        was = self.menu_change_tierlist
+        with self.mili.begin(None, mili.FILL | mili.PADLESS) as mainc:
             self.ui_top_btns()
-            self.title_h = self.mili.text_element(
-                f"Tierlist {self.tierlist.name.upper().replace("_", " ")}",
-                {
-                    "size": self.mult(20),
-                    "growy": False,
-                    "cache": "auto",
-                },
-                (0, 0, 0, 30),
-                {"align": "center"},
-            ).data.rect.h
+            self.title_h = (
+                self.mili.text_element(
+                    f"Tierlist {self.tierlist.name.upper().replace('_', ' ')} ({len(self.tierlist.tiers_all)})",
+                    {
+                        "size": self.mult(20),
+                        "growy": False,
+                        "cache": "auto",
+                    },
+                    (0, 0, 0, 30),
+                    {"align": "center"},
+                ).data.rect.h
+                + 3
+            )
             self.ui_columns()
+        if self.menu_change_tierlist:
+            self.ui_change_tierlist(mainc)
+            if any(pygame.mouse.get_just_released()) and was:
+                self.menu_change_tierlist = False
         if self.dragging_obj is None and self.card_hovered is not None:
             self.mili.element(
                 (pygame.mouse.get_pos() + pygame.Vector2(10, 10), (0, 0)),
@@ -171,6 +196,10 @@ class TierlistView(common.UIComponent):
             self.app.screenshot.screenshot_start,
             5,
         )
+        self.uicommon_top_btn("manufacturing", "left", self.action_general_settings, 6)
+        self.uicommon_top_btn(
+            "folder_open", "left", self.action_menu_change_tierlist, 7
+        )
         if self.selected_category is not None:
             self.uicommon_top_btn(
                 "remove",
@@ -178,6 +207,46 @@ class TierlistView(common.UIComponent):
                 lambda: setattr(self, "selected_category", None),
                 1,
             )
+
+    def ui_change_tierlist(self, mainc):
+        with self.mili.begin(
+            (
+                0,
+                self.title_h,
+                (
+                    (
+                        self.appdata.ui_categories_col_percentage
+                        if self.tierlist.only_category.strip() == ""
+                        else self.tierlist.ui_tier_name_percentage
+                    )
+                    / 100
+                )
+                * self.app.window.size[0],
+                self.app.window.size[1] - self.title_h,
+            ),
+            {"ignore_grid": True, "z": 99999, "parent_id": mainc.data.id}
+            | mili.PADLESS,
+        ):
+            self.mili.rect({"color": common.BG_COL})
+            self.mili.rect(
+                {
+                    "color": (common.BG_COL[0] + 40,) * 3,
+                    "outline": 1,
+                    "draw_above": True,
+                }
+            )
+            for tierlist in self.appdata.tierlists.values():
+                if tierlist is self.tierlist:
+                    continue
+                it = self.mili.element(None, {"fillx": True, "update_id": "cursor"})
+                self.mili.rect({"color": (common.cond(it, *common.BTN_COLS),) * 3})
+                self.mili.text(
+                    tierlist.name.upper().replace("_", " "), {"size": self.mult(20)}
+                )
+                if it.left_just_released:
+                    self.action_back()
+                    if self.app.main_menu.tierlist_sanity_check(tierlist):
+                        self.app.main_menu.open_tierlist(tierlist)
 
     def ui_dragging(self):
         if self.dragging_obj is None:
@@ -218,7 +287,10 @@ class TierlistView(common.UIComponent):
             )
             category = self.category_from_name(self.selected_obj)
             name = self.remove_prefix(self.selected_obj)
-            if category.uid == common.ANIMES_UID:
+            if (
+                category.uid == common.ANIMES_UID
+                or self.tierlist.only_category.strip() != ""
+            ):
                 txt = self.get_obj_name(name)
             else:
                 txt = f"{self.get_obj_name(name)} ({self.get_obj_name(category.name)})"
@@ -250,7 +322,7 @@ class TierlistView(common.UIComponent):
                     ("Copy to Clipboard (I)", self.action_copy_to_clipboard),
                     ("Auto Custom Character (L)", self.action_make_custom_char),
                 ]:
-                    it = self.mili.element(None)
+                    it = self.mili.element(None, {"update_id": "cursor"})
                     self.mili.rect({"color": (common.cond(it, *common.BTN_COLS),) * 3})
                     self.mili.text(
                         txt,
@@ -306,7 +378,12 @@ class TierlistView(common.UIComponent):
 
     def ui_label_category(self, category: data.CategoryData):
         it = self.mili.element(
-            None, {"fillx": True, "offset": self.categories_scroll.get_offset()}
+            None,
+            {
+                "fillx": True,
+                "offset": self.categories_scroll.get_offset(),
+                "update_id": "cursor",
+            },
         )
         self.mili.rect(
             {
@@ -391,14 +468,18 @@ class TierlistView(common.UIComponent):
                 | mili.X,
             ) as cont:
                 already_added = []
+                prev = None
+                first = True
                 for name in self.selected_category.downloaded:
                     string = self.selected_category.image_prefixed(name)
                     if string in self.tierlist.tiers_all:
                         already_added.append(name)
                         continue
-                    self.ui_category_card(name)
+                    self.ui_category_card(name, prev_name=prev, first=first)
+                    prev = name
+                    first = False
                 for name in already_added:
-                    self.ui_category_card(name, already_added=True)
+                    self.ui_category_card(name, already_added=True, first=-1)
 
     def ui_category_title(self):
         with self.mili.begin(
@@ -413,13 +494,25 @@ class TierlistView(common.UIComponent):
             if r != prev:
                 self.layer_cache._dirty = True
             self.ui_category_title_name()
-            if self.selected_category.uid == common.ANIMES_UID:
+            if (
+                self.selected_category.uid == common.ANIMES_UID
+                or not self.selected_category.auto
+            ):
                 it = self.mili.element(
-                    (0, 0, self.mult(30), self.mult(30)), {"align": "center"}
+                    (0, 0, self.mult(30), self.mult(30)),
+                    {"align": "center", "update_id": "cursor"},
                 )
                 self.mili.image(
                     mili.icon.get_google(
-                        "bookmark_flag" if self.animes_only_first else "bookmark"
+                        (
+                            "refresh"
+                            if not self.selected_category.auto
+                            else (
+                                "bookmark_flag"
+                                if self.animes_only_first
+                                else "bookmark"
+                            )
+                        )
                     ),
                     {
                         "cache": "auto",
@@ -427,7 +520,10 @@ class TierlistView(common.UIComponent):
                     },
                 )
                 if it.left_just_released:
-                    self.animes_only_first = not self.animes_only_first
+                    if self.selected_category.uid == common.ANIMES_UID:
+                        self.animes_only_first = not self.animes_only_first
+                    elif not self.selected_category.auto:
+                        self.selected_category.download()
         if len(self.selected_category.downloaded) <= 0 and self.selected_category:
             self.mili.text_element(
                 "No images downloaded for this category...",
@@ -441,7 +537,8 @@ class TierlistView(common.UIComponent):
             )
             if self.selected_category.uid != common.ANIMES_UID:
                 it = self.mili.element(
-                    (0, 0, self.mult(30), self.mult(30)), {"align": "center"}
+                    (0, 0, self.mult(30), self.mult(30)),
+                    {"align": "center", "update_id": "cursor"},
                 )
                 self.mili.image(
                     mili.icon.get_google("download"),
@@ -464,13 +561,10 @@ class TierlistView(common.UIComponent):
         self.mili.text(
             self.get_obj_name(self.selected_category.name)
             + (
-                ""
-                if self.selected_category.uid == common.ANIMES_UID
-                else (
-                    f" {extra_str}"
-                    if self.selected_category.downloading
-                    else f" ({self.category_count.get(self.selected_category.uid, 0)}/{len(self.selected_category.downloaded)})"
-                )
+                f" {extra_str}"
+                if self.selected_category.downloading
+                and self.selected_category.uid != common.ANIMES_UID
+                else f" ({self.category_count.get(self.selected_category.uid, 0)}/{len(self.selected_category.downloaded)})"
             ),
             {
                 "size": self.mult(19),
@@ -488,15 +582,13 @@ class TierlistView(common.UIComponent):
         ):
             self.ui_marked(True)
 
-    def ui_category_card(self, name, already_added=False):
+    def ui_category_card(self, name, already_added=False, prev_name=None, first=False):
         string = self.selected_category.image_prefixed(name)
         image = self.appdata.images.get(string, mili.icon.get_google(common.HOURGLASS))
 
         it = self.mili.element(
             (0, 0, self.image_w, self.image_h),
-            {
-                "offset": self.category_scroll.get_offset(),
-            },
+            {"offset": self.category_scroll.get_offset()},
         )
         alpha = 255
         marked = string in self.tierlist.marked
@@ -518,16 +610,39 @@ class TierlistView(common.UIComponent):
             {
                 "cache": "auto",
                 "alpha": alpha,
-                "layer_cache": self.layer_cache,
+                "layer_cache": None,
             },
         )
         if marked:
             self.ui_marked()
+        if (
+            self.show_initials
+            and first != -1
+            and ((prev_name is not None and name[0] != prev_name[0]) or first)
+        ):
+            self.mili.element(
+                (it.data.absolute_rect.topleft, (0, 0)),
+                {"ignore_grid": True, "blocking": False, "z": 999999, "parent_id": 0},
+            )
+            if (
+                self.layer_cache._erase_rect is not None
+                and it.data.absolute_rect.top >= self.layer_cache._erase_rect.bottom
+            ):
+                self.mili.rect({"color": (common.BTN_COLS[1],) * 3})
+                self.mili.text(
+                    name[0].upper(),
+                    {
+                        "color": "green",
+                        "size": int(self.image_h / 5.5),
+                        "padx": 2,
+                        "pady": 0,
+                    },
+                )
         if it.left_just_pressed and self.selected_obj is None and not already_added:
             self.dragging_obj = string
             self.drag_origin = None
             self.drag_origin_i = None
-        if it.just_pressed_button == pygame.BUTTON_RIGHT:
+        if it.just_pressed_button == pygame.BUTTON_RIGHT and self.dragging_obj is None:
             self.select_obj(string)
         if (
             it.just_released_button == pygame.BUTTON_MIDDLE
@@ -542,6 +657,7 @@ class TierlistView(common.UIComponent):
         if (
             pygame.mouse.get_pressed()[2]
             and it.absolute_hover
+            and self.dragging_obj is None
             and self.selected_obj != string
             and self.prev_selected_obj != string
         ):
@@ -624,9 +740,7 @@ class TierlistView(common.UIComponent):
         )
         category = self.category_from_name(prefixed)
 
-        it = self.mili.element(
-            (0, 0, self.image_w, self.image_h),
-        )
+        it = self.mili.element((0, 0, self.image_w, self.image_h))
         if it.data.absolute_rect.bottom > self.lowest_card_bottom:
             self.lowest_card_bottom = it.data.absolute_rect.bottom
         alpha = 255
@@ -642,6 +756,11 @@ class TierlistView(common.UIComponent):
             cannumber = False
         if cannumber:
             alpha = 80
+        if (
+            self.dragging_category is not None
+            and category is not self.dragging_category
+        ):
+            alpha = 50
         if not marked and self.only_marked:
             alpha = 50
         if (
@@ -652,20 +771,24 @@ class TierlistView(common.UIComponent):
         self.mili.image(
             image,
             {
-                "cache": self.cache_preview
-                if preview
-                else "auto",
+                "cache": self.cache_preview if preview else "auto",
                 "alpha": alpha,
                 "layer_cache": None if preview else self.layer_cache,
             },
         )
         if cannumber:
+            if tier_i == 0 and self.tierlist.ignore_first:
+                i = i - 1
+            perc = (
+                (self.global_i + (0 if self.tierlist.ignore_first else 1))
+                / (
+                    len(self.tierlist.tiers_all)
+                    - (1 if self.tierlist.ignore_first else 0)
+                )
+            ) * 100
             self.mili.text(
-                f"{self.global_i+1}\n{i+1}",
-                {
-                    "size": int(self.image_h / 4),
-                    "cache": "auto",
-                },
+                f"{self.global_i + (0 if self.tierlist.ignore_first else 1)}\n{i + 1}\n{perc:.3f}%",
+                {"size": int(self.image_h / 6), "cache": "auto", "growx": False},
             )
         if marked:
             self.ui_marked()
@@ -676,7 +799,7 @@ class TierlistView(common.UIComponent):
             self.dragging_obj = prefixed
             self.drag_origin = tier_i
             self.drag_origin_i = i
-        if it.just_pressed_button == pygame.BUTTON_RIGHT:
+        if it.just_pressed_button == pygame.BUTTON_RIGHT and self.dragging_obj is None:
             self.select_obj(prefixed)
         if it.just_released_button == pygame.BUTTON_MIDDLE or (
             it.left_just_released and ctrl
@@ -689,6 +812,7 @@ class TierlistView(common.UIComponent):
         if (
             pygame.mouse.get_pressed()[2]
             and it.absolute_hover
+            and self.dragging_obj is None
             and self.selected_obj != prefixed
             and self.prev_selected_obj != prefixed
         ):
@@ -704,7 +828,12 @@ class TierlistView(common.UIComponent):
         if col is None:
             col = (0, 0, 0, 0)
         it = self.mili.element(
-            None, {"filly": True, "fillx": str(self.tierlist.ui_tier_name_percentage)}
+            None,
+            {
+                "filly": True,
+                "fillx": str(self.tierlist.ui_tier_name_percentage),
+                "update_id": "cursor",
+            },
         )
         if it.data.absolute_rect.bottom > self.lowest_card_bottom:
             self.lowest_card_bottom = it.data.absolute_rect.bottom
@@ -822,6 +951,14 @@ class TierlistView(common.UIComponent):
         self.action_back()
         self.app.menu = self.app.tierlist_settings_menu
         self.app.menu.open()
+
+    def action_general_settings(self):
+        self.app.menu = self.app.settings_menu
+        self.app.settings_back = self
+
+    def action_menu_change_tierlist(self):
+        self.menu_change_tierlist = True
+        self.show_categories = True
 
     def action_back(self):
         self.tierlist.save_file()
@@ -982,8 +1119,16 @@ class TierlistView(common.UIComponent):
             self.action_toggle_numbers()
         if e.key == pygame.K_c:
             self.app.screenshot.screenshot_start()
+        if e.key == pygame.K_u:
+            self.animes_only_first = not self.animes_only_first
         if e.key == pygame.K_t:
             self.action_toggle_categories()
+            if not self.show_categories:
+                self.menu_change_tierlist = False
+        if e.key == pygame.K_y:
+            self.menu_change_tierlist = not self.menu_change_tierlist
+            if self.menu_change_tierlist:
+                self.show_categories = True
         if e.key == pygame.K_ESCAPE:
             self.event_escape()
 
