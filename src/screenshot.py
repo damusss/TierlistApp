@@ -26,6 +26,7 @@ class ScreenshotWindowManager:
         self.global_i = 0
         self.image_h = 1
         self.lowest_card_bottom = 0
+        self.dragging_category = None
         self.mili.default_styles(
             image={"smoothscale": True},
             text={
@@ -59,6 +60,21 @@ class ScreenshotWindowManager:
 
     def category_from_name(self, name):
         return self.app.tierlist_view.category_from_name(name)
+
+    def get_image_name(self, category, name):
+        if category.uid == common.ANIMES_UID and self.tierlist.use_original:
+            split = name.split("|")[1]
+            split_ = split.rsplit("_", 1)
+            if len(split_) == 1:
+                catname = split_[0]
+            else:
+                if split_[-1].isdecimal():
+                    return name
+                catname = split
+            cat = self.appdata.categories[self.appdata.categories_uids[catname]]
+            if len(cat.links) > 1:
+                return "original_" + name
+        return name
 
     def screenshot_start(self):
         self.screenshot_taking = True
@@ -106,7 +122,7 @@ class ScreenshotWindowManager:
             f"screenshots/{self.tierlist.name}_{date_str}.png",
         )
         alert.message(
-            f"Saved screenshot of tierlist {self.tierlist.name} to 'screenshots/{self.tierlist.name}_{date_str}.png'"
+            f"Saved screenshot of tierlist to 'screenshots/{self.tierlist.name}_{date_str}.png'"
         )
 
     def screenshot_stop(self):

@@ -20,6 +20,39 @@ DOUBLE_CLICK_TIME = 300
 HOURGLASS = "hourglass_top"
 DISTRIBUTION = "50-100,5-180,180|0.25"
 THREADED = True
+RATED_NAMES = {
+    10: "Masterpiece (10/10)",
+    9.5: "Peak (9.5/10)",
+    9: "Great (9/10)",
+    8: "Good (8/10)",
+    7: "Alright (7/10)",
+    6: "Decent (6/10)",
+    5: "Bad (<=5/10)",
+    2: "Dogshit (2/10)",
+    0: "Unrated (-/10)",
+}
+RATED_NAMES_SHORT = {
+    10: "Masterpiece",
+    9.5: "Peak",
+    9: "Great",
+    8: "Good",
+    7: "Alright",
+    6: "Decent",
+    5: "Bad",
+    2: "Dogshit",
+    0: "Unrated",
+}
+RATED_COLORS = {
+    10: "#FFC000",
+    9.5: "#ce8100",
+    9: "#BE93E4",
+    8: "#17B169",
+    7: "#6CB4EE",
+    6: "#fd5c63",
+    5: "#ff0000",
+    2: "#8b0000",
+    0: "white",
+}
 
 
 def fallback_serializer(obj):
@@ -28,10 +61,10 @@ def fallback_serializer(obj):
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
-def cond(it, normal, hover, press):
+def cond(it, normal, hover, press, abs=False):
     if it.left_pressed:
         return press
-    if it.hovered:
+    if it.hovered or (abs and it.absolute_hover):
         return hover
     return normal
 
@@ -119,6 +152,9 @@ class UIComponent:
                 callback()
             elif othercallback:
                 othercallback()
+
+    def get_title(self):
+        return f"Tierlist App (FPS:{self.app.clock.get_fps():.0f})"
 
     def can_back(self):
         return True

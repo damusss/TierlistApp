@@ -29,6 +29,9 @@ class SettingsMenu(common.UIComponent):
         self.screenshot_mult_entry = entryline.Entryline(
             "Enter multiplier...", True, (1, 5), self.appdata.screenshot_window_mult
         )
+        self.mal_entry = entryline.Entryline(
+            "Enter MAL username...", text=self.appdata.mal_username
+        )
         self.get_ratio_size_entry = entryline.Entryline("Enter image full path...")
         self.resize_ratio_size_entry = entryline.Entryline("Enter image full path...")
         self.search_entry = entryline.Entryline("Enter search query...", lowercase=True)
@@ -37,6 +40,9 @@ class SettingsMenu(common.UIComponent):
         self.show_ids = False
         self.rect_l = pygame.Rect()
         self.rect_r = pygame.Rect()
+
+    def get_title(self):
+        return f"Tierlist App Settings (FPS:{self.app.clock.get_fps():.0f})"
 
     def update(self):
         self.search_entry.update()
@@ -125,6 +131,16 @@ class SettingsMenu(common.UIComponent):
             "57",
             "40",
             buttons=[(30, "refresh", self.action_refresh_screenshot_mult)],
+            scroll=self.scroll_left,
+        )
+        self.uicommon_setting(
+            "MAL Username",
+            self.mal_entry,
+            self.appdata,
+            "mal_username",
+            "57",
+            "40",
+            buttons=[(30, "check_circle", self.appdata.refresh_MAL)],
             scroll=self.scroll_left,
         )
 
@@ -302,7 +318,9 @@ class SettingsMenu(common.UIComponent):
                 },
                 None,
             )
-            it = self.mili.element((0, 0, self.mult(30), self.mult(30)), {"update_id": "cursor"})
+            it = self.mili.element(
+                (0, 0, self.mult(30), self.mult(30)), {"update_id": "cursor"}
+            )
             self.mili.rect({"color": (common.cond(it, *common.BTN_COLS),) * 3})
             self.mili.image(
                 mili.icon.get_google(
@@ -422,7 +440,7 @@ class SettingsMenu(common.UIComponent):
                     link_entry.focused = False
                     link_entry.text = link
         for it in mainit:
-            if it.absolute_rect.bottom > self.app.window.size[1]:
+            if it.absolute_rect.bottom > self.app.window.size[1] * 1.2:
                 return True
         return False
 
@@ -451,8 +469,12 @@ class SettingsMenu(common.UIComponent):
             ),
             (
                 30,
-                None if category.downloading else "add",
-                partial(self.action_add_link, category.uid),
+                None
+                if category.downloading
+                else ("folder_open" if not category.auto else "add"),
+                category.open_exporer
+                if not category.auto
+                else partial(self.action_add_link, category.uid),
             ),
             (
                 30,
@@ -487,9 +509,15 @@ class SettingsMenu(common.UIComponent):
         for txt, callback in [
             ("Apply Custom Characters", self.appdata.apply_custom_chars),
             ("Create Backup", self.appdata.create_backup),
+            ("Refresh MyAnimeList", self.appdata.refresh_MAL),
         ]:
             it = self.mili.element(
-                None, {"fillx": "90", "offset": self.scroll_left.get_offset(), "update_id": "cursor"}
+                None,
+                {
+                    "fillx": "90",
+                    "offset": self.scroll_left.get_offset(),
+                    "update_id": "cursor",
+                },
             )
             self.mili.rect({"color": (common.cond(it, *common.BTN_COLS) + 5,) * 3})
             self.mili.text(txt, {"size": self.mult(20), "cache": "auto"})
@@ -620,6 +648,7 @@ class SettingsMenu(common.UIComponent):
         self.event_scroll(e, self.scroll_right, self.rect_r)
         self.tbarh_entry.event(e)
         self.ratio_entry.event(e)
+        self.mal_entry.event(e)
         self.screenshot_mult_entry.event(e)
         self.get_ratio_size_entry.event(e)
         self.resize_ratio_size_entry.event(e)

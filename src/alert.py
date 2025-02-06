@@ -60,7 +60,9 @@ class AlertData:
                     None, mili.RESIZE | mili.PADLESS | mili.CENTER | mili.X
                 ):
                     for i, option in enumerate(self.options):
-                        it = self.mili.element(None, {"align": "center", "update_id": "cursor"})
+                        it = self.mili.element(
+                            None, {"align": "center", "update_id": "cursor"}
+                        )
                         self.mili.rect(
                             {"color": (common.cond(it, *common.BTN_COLS),) * 3}
                         )
@@ -86,6 +88,8 @@ def alert(title, details, error=True, options=None, callback=None):
 
 def message(message):
     print(f"[info] {message}")
+    if _instance.app.frozen:
+        return
     _instance.messages.append(message)
 
 

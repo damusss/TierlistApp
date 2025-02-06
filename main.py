@@ -8,12 +8,13 @@ from src import tierlist_settings_menu
 from src import data
 from src import alert
 from src import screenshot
+from src import mal_menu
 
 
 class TierlistApp(mili.GenericApp):
     def __init__(self):
         assert pygame.vernum >= (2, 5, 2)
-        assert mili.VERSION >= (1, 0, 3)
+        assert mili.VERSION >= (1, 0, 4)
         print(f"MILI {mili.VERSION_STR}")
         pygame.init()
         super().__init__(
@@ -33,6 +34,7 @@ class TierlistApp(mili.GenericApp):
                 "growy": True,
                 "sysfont": True,
                 "name": "Segoe UI",
+                "cache": "auto",
             },
             line={"color": "white"},
             rect={"border_radius": 0},
@@ -43,6 +45,7 @@ class TierlistApp(mili.GenericApp):
         self.settings_menu = settings_menu.SettingsMenu(self)
         self.tierlist_view = tierlist_view.TierlistView(self)
         self.tierlist_settings_menu = tierlist_settings_menu.TierlistSettingsMenu(self)
+        self.mal_menu = mal_menu.MALMenu(self)
         self.tierlist: data.TierlistData = None
         self.alert_system = alert.AlertSystem(self)
         self.screenshot = screenshot.ScreenshotWindowManager(self)
@@ -62,6 +65,7 @@ class TierlistApp(mili.GenericApp):
         self.data.save()
 
     def update(self):
+        self.mal_menu.layer_cache.active = False
         if len(self.data.startup_to_load_categories) > 0:
             cat = self.data.startup_to_load_categories.pop()
             self.data.load_category_images(cat)
@@ -71,18 +75,12 @@ class TierlistApp(mili.GenericApp):
         if pygame.time.get_ticks() - self.last_save >= 1000 * 3 * 60:
             self.data.save()
             self.last_save = pygame.time.get_ticks()
-        self.window.title = (
-            f"Tierlist {self.tierlist.name.title()} {self.clock.get_fps():.0f}"
-            if self.menu in [self.tierlist_view, self.tierlist_settings_menu]
-            else f"Tierlist App {self.clock.get_fps():.0f}"
-        )
+        self.window.title = self.menu.get_title()
         if self.screenshot.screenshot_taking:
             self.window.focus()
             self.screenshot.screenshot_run()
             self.window.focus()
             return
-        # if not self.custom_borders.update():
-        #    pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
         if self.frozen:
             self.target_framerate = 10
             return

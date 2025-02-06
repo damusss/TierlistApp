@@ -5,8 +5,11 @@ import requests
 import bs4
 import random
 import shutil
-import datetime
 import pathlib
+import platform
+import subprocess
+from datetime import datetime, timedelta
+from xml.etree import ElementTree as XMLTree
 from src import common
 from src import alert
 
@@ -21,9 +24,9 @@ for folder in ["tierlists", "categories"]:
         os.mkdir(f"user_data/{folder}")
 
 
-def request_wrapper(action_message, *args, **kwargs):
+def request_wrapper(action_message, *args, get=True, **kwargs):
     try:
-        response = requests.get(*args, **kwargs)
+        response = (requests.get if get else requests.post)(*args, **kwargs)
         response.raise_for_status()
     except requests.exceptions.ConnectionError:
         return alert.alert("Connection/Network Error", action_message)
@@ -34,8 +37,10 @@ def request_wrapper(action_message, *args, **kwargs):
             return alert.alert("404 Bad/Missing Link Error", action_message)
         elif response.status_code == 503:
             return alert.alert("503 Unavailable Server Error", action_message)
+        elif response.status_code == 404:
+            return alert.alert(f"400 {response.reason}")
         else:
-            return alert.alert("Generic HTTP Error", f"{action_message}: {http_err}")
+            return alert.alert("HTTP Error", f"{action_message}: {http_err}")
     except requests.exceptions.RequestException as err:
         return alert.alert("Unexpected Error", f"{action_message}: {err}")
     return response
@@ -77,6 +82,29 @@ class CategoryData:
             "no_image": self.no_image,
             "auto": self.auto,
         }
+
+    def open_exporer(self):
+        system = platform.system()
+        path = pathlib.Path(f"user_data/categories/{self.uid}").absolute()
+
+        if system == "Windows":
+            subprocess.Popen(
+                ["explorer", path],
+                creationflags=subprocess.CREATE_NO_WINDOW
+                | subprocess.CREATE_NEW_CONSOLE,
+            )
+        elif system == "Darwin":
+            subprocess.Popen(["open", path])
+        elif system == "Linux":
+            subprocess.Popen(["xdg-open", path])
+        else:
+            pygame.display.message_box(
+                "Operation failed",
+                "Could not show file in explorer due to unsupported OS.",
+                "error",
+                None,
+                ("Understood"),
+            )
 
     def remove_old_covers(self):
         if self.name.strip() == "":
@@ -436,6 +464,7 @@ class TierlistData:
         self.ui_tier_name_percentage = data["ui_tier_name_percentage"]
         self.distribution_data = data["distribution_data"]
         self.ignore_first = data.get("ignore_first", False)
+        self.use_original = data.get("use_original", False)
         all = []
         for t in self.tiers:
             all += t
@@ -455,10 +484,70 @@ class TierlistData:
             "ui_tier_name_percentage": self.ui_tier_name_percentage,
             "distribution_data": self.distribution_data,
             "ignore_first": self.ignore_first,
+            "use_original": self.use_original,
         }
 
     def save_file(self):
         common.write_json(f"tierlists/{self.name}.json", self.save())
+
+
+class MALParent:
+    def __init__(self, category: "CategoryData"):
+        self.category = category
+        self.animes: dict[int, "MALAnime"] = {}
+        self.tags = set()
+        self.score = 0
+        self.episodes_str = ""
+        self.status = "completed"
+        self.global_i = 0
+        self.elapsed_time = 0
+
+    def __str__(self):
+        return f"{self.category.name}"
+
+    __repr__ = __str__
+
+
+class MALAnime:
+    def __init__(
+        self,
+        index,
+        movie,
+        total_amount,
+        watched_amount,
+        start_date,
+        end_date,
+        status,
+        score,
+        tags,
+    ):
+        def get_date(date):
+            year, month, day = date.split("-")
+            year = int(year.strip())
+            month = int(month.strip())
+            day = int(day.strip())
+            if year == 0:
+                return None
+            return datetime(year, month, day)
+
+        self.index = index
+        self.movie = movie
+        self.total_amount = int(total_amount)
+        self.watched_amount = int(watched_amount)
+        self.status = status.replace(" ", "_").lower()
+        self.score = int(score)
+        self.start_date = get_date(start_date)
+        self.end_date = get_date(end_date)
+        if self.end_date is None and self.status == "watching":
+            self.end_date = datetime.now()
+        self.elapsed_time = None
+        if self.start_date is not None and self.end_date is not None:
+            self.elapsed_time = (self.end_date - self.start_date) + timedelta(1)
+        self.tags = set([tag.strip() for tag in tags.split(",")]) if tags else set()
+        if "almost10" in self.tags:
+            self.score = 9.5
+        if "film" in self.tags:
+            self.movie = True
 
 
 class Data:
@@ -504,6 +593,7 @@ class Data:
             {
                 "taskbar_h": 52,
                 "image_ratio": 0.6428571429,
+                "mal_username": "",
                 "color_vars": [
                     ["purple", "#9539bf"],
                     ["red", "#E32636"],
@@ -518,14 +608,21 @@ class Data:
                 "ui_category_col_percentage": 25,
                 "ui_categories_col_percentage": 12,
                 "screenshot_window_mult": 2,
+                "mal_small": False,
+                "mal_tags": [],
             },
         )
         self.taskbar_h = settings["taskbar_h"]
         self.image_ratio = settings["image_ratio"]
         self.color_vars = settings["color_vars"]
-        self.ui_category_col_percentage = settings["ui_category_col_percentage"]
-        self.ui_categories_col_percentage = settings["ui_categories_col_percentage"]
-        self.screenshot_window_mult = settings["screenshot_window_mult"]
+        self.ui_category_col_percentage = settings.get("ui_category_col_percentage", 25)
+        self.ui_categories_col_percentage = settings.get(
+            "ui_categories_col_percentage", 12
+        )
+        self.screenshot_window_mult = settings.get("screenshot_window_mult", 2)
+        self.mal_username = settings.get("mal_username", "")
+        self.mal_small = settings.get("mal_small", False)
+        self.mal_tags = settings.get("mal_tags", [])
         self.taskbar_h_change()
 
         self.images = {}
@@ -536,8 +633,157 @@ class Data:
         else:
             self.custom_chars_listdir = []
         self.startup_to_load_categories = list(self.categories.values())
-        # for category in self.categories.values():
-        #    self.load_category_images(category)
+
+        self.load_MAL()
+
+    def refresh_MAL(self):
+        if common.THREADED:
+            thread = threading.Thread(target=self.thread_refresh_MAL)
+            thread.start()
+        else:
+            self.thread_refresh_MAL()
+
+    def thread_refresh_MAL(self):
+        if self.mal_username.strip() == "":
+            return alert.alert(
+                "Empty MAL Username", "Cannot retrieve MAL data with empty username!"
+            )
+        response = request_wrapper(
+            "Could not refresh MyAnimeList data",
+            "https://malscraper.azurewebsites.net/scrape",
+            get=False,
+            data={"username": self.mal_username, "listtype": "anime"},
+        )
+        if response is None:
+            return
+        with open("user_data/mal.xml", "w", encoding="utf-8") as file:
+            file.write(response.text)
+        self.load_MAL()
+        alert.message("Refreshed MyAnimeList")
+
+    def MAL_process_element(self, element: XMLTree.Element):
+        status = element.find("my_status").text
+        if status in ["Plan To Watch"]:
+            return
+        start, end = (
+            element.find("my_start_date").text,
+            element.find("my_finish_date").text,
+        )
+        movie = element.find("series_type").text == "Movie"
+        score = element.find("my_score").text
+        uid = element.find("series_animedb_id").text
+        episodes, watched = (
+            element.find("series_episodes").text,
+            element.find("my_watched_episodes").text,
+        )
+        tags = element.find("my_tags").text
+        category = None
+        index = -1
+        for cat in self.categories.values():
+            dobreak = False
+            for i, link in enumerate(cat.links):
+                link_uid = link.replace("https://myanimelist.net/anime/", "").split(
+                    "/"
+                )[0]
+                if link_uid == uid:
+                    category = cat
+                    index = i
+                    dobreak = True
+                    break
+            if dobreak:
+                break
+        if category is None:
+            return
+        if category.uid not in self.mal_data:
+            self.mal_data[category.uid] = MALParent(category)
+        parent = self.mal_data[category.uid]
+        anime = MALAnime(
+            index, movie, episodes, watched, start, end, status, score, tags
+        )
+        parent.animes[index] = anime
+
+    def get_episodes_str(self, watched_eps, eps, movies):
+        return f"{f'{watched_eps}{f"/{eps}" if watched_eps != eps else ""}' if eps > 0 else ''}{f'{" + " if eps > 0 and movies > 0 else ""}{movies} Movie{"s" if movies > 1 else ""}' if movies > 0 else ''}"
+
+    def load_MAL(self):
+        self.mal_data: dict[int, MALParent] = {}
+        self.mal_episodes_str = None
+        g_eps = g_seasons = g_movies = g_series = 0
+        self.mal_sorted = {}
+        if not os.path.exists("user_data/mal.xml"):
+            return
+        with open("user_data/mal.xml", "r", encoding="utf-8") as file:
+            tree = XMLTree.fromstring(file.read())
+            for element in tree.findall("anime"):
+                self.MAL_process_element(element)
+        tierlist = self.tierlists.get("fav_animes", None)
+        keys = [10, 9.5, 9, 8, 7, 6, 5, 2]
+        if tierlist is None:
+            self.mal_sorted = {key: [] for key in keys} | {0: []}
+        else:
+            self.mal_sorted = {
+                key: [None] * len(tierlist.tiers[i]) for i, key in enumerate(keys)
+            } | {0: []}
+        for parent in self.mal_data.values():
+            tags = set()
+            eps = 0
+            watched_eps = 0
+            movies = 0
+            last_end = None
+            for anime in parent.animes.values():
+                tags |= anime.tags
+                if anime.elapsed_time is not None:
+                    parent.elapsed_time += anime.elapsed_time.days
+                    if anime.start_date == last_end:
+                        parent.elapsed_time -= 1
+                last_end = anime.end_date
+                if anime.status != "completed":
+                    parent.status = anime.status
+                if anime.movie:
+                    movies += 1
+                else:
+                    g_seasons += 1
+                    eps += anime.total_amount
+                    watched_eps += anime.watched_amount
+            g_series += 1
+            g_eps += watched_eps
+            g_movies += movies
+            if len(parent.animes) == 1 and parent.animes[0].movie:
+                g_series -= 1
+            parent.episodes_str = self.get_episodes_str(watched_eps, eps, movies)
+            parent.tags = tags
+            if tierlist is None:
+                if "almost10" in tags:
+                    parent.score = 9.5
+                parent.score = max([anime.score for anime in parent.animes.values()])
+                self.mal_sorted[parent.score].append(parent)
+            else:
+                tname = "0|" + parent.category.name
+                if tname not in tierlist.tiers_all:
+                    parent.score = max(
+                        [anime.score for anime in parent.animes.values()]
+                    )
+                    self.mal_sorted[parent.score].append(parent)
+                else:
+                    for i, tier in enumerate(tierlist.tiers):
+                        if tname in tier:
+                            parent.score = keys[i]
+                            idx = tier.index(tname)
+                            self.mal_sorted[parent.score][idx] = parent
+        if tierlist is None:
+            self.mal_sorted = {
+                key: sorted(value, key=lambda p: p.category.name[0])
+                for key, value in self.mal_sorted.items()
+            }
+        global_i = 1
+        for parents in self.mal_sorted.values():
+            for parent in parents:
+                if parent.elapsed_time == 0:
+                    parent.elapsed_time = None
+                parent.global_i = global_i
+                global_i += 1
+
+        self.mal_episodes_str = f"{len(self.mal_data)} Animes, {g_series} TV Series, {g_seasons} Seasons, {g_eps} Episodes, {g_movies} Movies"
 
     def load_category_images(self, category: CategoryData, force=False):
         if common.THREADED:
@@ -569,6 +815,11 @@ class Data:
                             f"custom_chars/{test_str}"
                         ).convert_alpha()
                         self.images[string] = image
+                        if category.uid == common.ANIMES_UID:
+                            image2 = pygame.image.load(
+                                folder + f"/{filename}"
+                            ).convert_alpha()
+                            self.images["original_" + string] = image2
                         self.loaded_custom_chars.append(test_str)
                         found = True
                         break
@@ -582,7 +833,10 @@ class Data:
             except pygame.error as e:
                 self.image_load_error(folder + f"/{filename}", e)
                 continue
-            self.images[string] = image.convert_alpha()
+            img = image.convert_alpha()
+            self.images[string] = img
+            if category.uid == common.ANIMES_UID:
+                self.images["original_" + string] = img
         if self.to_load_categories is not None:
             self.to_load_categories -= 1
 
@@ -610,7 +864,10 @@ class Data:
         except pygame.error as e:
             self.image_load_error(path, e)
             return
-        self.images[string] = image.convert_alpha()
+        img = image.convert_alpha()
+        self.images[string] = img
+        if category.uid == common.ANIMES_UID:
+            self.images["original_" + string] = img
 
     def get_size_ratio(self, path):
         calc_path = str(path).strip().replace('"', "")
@@ -714,10 +971,13 @@ class Data:
             {
                 "taskbar_h": self.taskbar_h,
                 "image_ratio": self.image_ratio,
+                "mal_username": self.mal_username,
+                "mal_small": self.mal_small,
                 "color_vars": self.color_vars,
                 "ui_categories_col_percentage": self.ui_categories_col_percentage,
                 "ui_category_col_percentage": self.ui_category_col_percentage,
                 "screenshot_window_mult": self.screenshot_window_mult,
+                "mal_tags": self.mal_tags,
             },
         )
         for tierlist in self.tierlists.values():
@@ -725,7 +985,7 @@ class Data:
         alert.message("All data was saved")
 
     def create_backup(self):
-        now = datetime.datetime.now()
+        now = datetime.now()
         folder_name = (
             str(now)
             .replace("-", "_")
@@ -769,6 +1029,8 @@ class Data:
                 if category.isdecimal():
                     category = self.categories.get(int(category), None)
                 else:
+                    if category.startswith("_"):
+                        category = category.removeprefix("_")
                     category = self.categories.get(
                         self.categories_uids.get(category, None), None
                     )

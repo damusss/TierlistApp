@@ -37,6 +37,9 @@ class TierlistSettingsMenu(common.UIComponent):
         self.distribution_data_entry.set_text(self.tierlist.distribution_data)
         self.copyfrom_entry.set_text("")
 
+    def get_title(self):
+        return f"Tierlist {self.tierlist.name.title()} Settings (FPS:{self.app.clock.get_fps():.0f})"
+
     @property
     def tierlist(self):
         return self.app.tierlist
@@ -103,7 +106,9 @@ class TierlistSettingsMenu(common.UIComponent):
                 ):
                     align = [pygame.FONT_LEFT, pygame.FONT_RIGHT]
                     for i, string in enumerate(helpstr.split(":")):
-                        it = self.mili.element(None, {"fillx": "50", "update_id": "cursor"})
+                        it = self.mili.element(
+                            None, {"fillx": "50", "update_id": "cursor"}
+                        )
                         self.mili.text(
                             string,
                             {
@@ -156,7 +161,9 @@ class TierlistSettingsMenu(common.UIComponent):
                 image = self.appdata.images.get(
                     name, mili.icon.get_google(common.HOURGLASS)
                 )
-                it = self.mili.element((0, 0, 100 * self.appdata.image_ratio, 100), {"update_id": "cursor"})
+                it = self.mili.element(
+                    (0, 0, 100 * self.appdata.image_ratio, 100), {"update_id": "cursor"}
+                )
                 self.mili.image(
                     image,
                     {
@@ -226,7 +233,8 @@ class TierlistSettingsMenu(common.UIComponent):
             )
             i += 1
         it = self.mili.element(
-            (0, 0, self.mult(40), self.mult(40)), {"offset": self.scroll.get_offset(), "update_id": "cursor"}
+            (0, 0, self.mult(40), self.mult(40)),
+            {"offset": self.scroll.get_offset(), "update_id": "cursor"},
         )
         self.mili.image(
             mili.icon.get_google("add", "white"),
@@ -264,7 +272,12 @@ class TierlistSettingsMenu(common.UIComponent):
             ),
         ]:
             it = self.mili.element(
-                None, {"fillx": "30", "offset": self.scroll.get_offset(), "update_id": "cursor"}
+                None,
+                {
+                    "fillx": "30",
+                    "offset": self.scroll.get_offset(),
+                    "update_id": "cursor",
+                },
             )
             self.mili.rect({"color": (common.cond(it, *common.BTN_COLS) + 5,) * 3})
             self.mili.text(

@@ -10,17 +10,34 @@ class MainMenu(common.UIComponent):
 
     def ui(self):
         with self.mili.begin(None, {"fillx": True, "filly": True} | mili.CENTER):
-            it = self.mili.element((0, 0, self.mult(80), self.mult(80)), {"update_id": "cursor"})
-            self.mili.image(
-                mili.icon.get_google("settings"),
-                {
-                    "alpha": common.cond(it, *common.ALPHAS),
-                    "cache": "auto",
-                },
-            )
-            if it.left_just_released:
-                self.app.menu = self.app.settings_menu
-                self.app.settings_back = None
+            with self.mili.begin(None, mili.RESIZE | mili.X | mili.PADLESS):
+                it = self.mili.element(
+                    (0, 0, self.mult(80), self.mult(80)), {"update_id": "cursor"}
+                )
+                self.mili.image(
+                    mili.icon.get_google("settings"),
+                    {
+                        "alpha": common.cond(it, *common.ALPHAS),
+                        "cache": "auto",
+                    },
+                )
+                if it.left_just_released:
+                    self.app.menu = self.app.settings_menu
+                    self.app.settings_back = None
+                it = self.mili.element(
+                    (0, 0, self.mult(80), self.mult(80)), {"update_id": "cursor"}
+                )
+                self.mili.image(
+                    mili.icon.get_google("mal", (0, 0, 0, 0)),
+                    {
+                        "alpha": common.cond(it, *common.ALPHAS),
+                        "cache": "auto",
+                        "pad": "7",
+                    },
+                )
+                if it.left_just_released:
+                    self.app.menu = self.app.mal_menu
+                    self.app.settings_back = None
             for tierlist in self.appdata.tierlists.values():
                 with self.mili.begin(
                     None,
@@ -43,7 +60,9 @@ class MainMenu(common.UIComponent):
                     if it.left_just_released:
                         if self.tierlist_sanity_check(tierlist):
                             self.open_tierlist(tierlist)
-                    it = self.mili.element((0, 0, self.mult(40), self.mult(40)), {"update_id": "cursor"})
+                    it = self.mili.element(
+                        (0, 0, self.mult(40), self.mult(40)), {"update_id": "cursor"}
+                    )
                     self.mili.rect({"color": (common.cond(it, *common.BTN_COLS),) * 3})
                     self.mili.image(
                         mili.icon.get_google("settings"),
@@ -55,7 +74,9 @@ class MainMenu(common.UIComponent):
                     if it.left_just_released:
                         if self.tierlist_sanity_check(tierlist, True):
                             self.open_tierlist(tierlist, True)
-            it = self.mili.element((0, 0, self.mult(60), self.mult(60)), {"update_id": "cursor"})
+            it = self.mili.element(
+                (0, 0, self.mult(60), self.mult(60)), {"update_id": "cursor"}
+            )
             self.mili.image(
                 mili.icon.get_google("add"),
                 {
