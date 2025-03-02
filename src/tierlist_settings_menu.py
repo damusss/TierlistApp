@@ -87,7 +87,7 @@ class TierlistSettingsMenu(common.UIComponent):
                 "Mark/Unmark (While Selected): UI Button/R",
                 "Search (While Selected): UI Button/A",
                 "Copy Image to Clipboard (While Selected): UI Button/I",
-                "Auto Custom Character (While Selected): UI Button/L",
+                "Auto Custom Item (While Selected): UI Button/L",
                 "Select Item: Hold Right Click on Card",
                 "Permanently Select Item: Double Right Click on Card",
                 "Drag Item: Hold Left Click on Card",
@@ -467,6 +467,7 @@ class TierlistSettingsMenu(common.UIComponent):
             f"Since you deleted the tierlist, an irreversible action, a backup of it before this action has been created in '{path}'",
         )
         self.app.menu = self.app.main_menu
+        self.mili.clear_memory()
         self.appdata.tierlists.pop(self.tierlist.name, None)
         if os.path.exists(f"user_data/tierlists/{self.tierlist.name}.json"):
             os.remove(f"user_data/tierlists/{self.tierlist.name}.json")
@@ -490,3 +491,4 @@ class TierlistSettingsMenu(common.UIComponent):
             if e.key == pygame.K_ESCAPE:
                 if self.can_back():
                     self.app.menu = self.app.tierlist_view
+                    self.mili.clear_memory()

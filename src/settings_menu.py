@@ -40,16 +40,26 @@ class SettingsMenu(common.UIComponent):
         self.show_ids = False
         self.rect_l = pygame.Rect()
         self.rect_r = pygame.Rect()
+        self.selected_category: data.CategoryData = None
+        self.remove_selection = pygame.time.get_ticks()
+        self.selected_hovered = None
+        self.selected_hovered_name = None
 
     def get_title(self):
         return f"Tierlist App Settings (FPS:{self.app.clock.get_fps():.0f})"
 
     def update(self):
+        if self.remove_selection:
+            if pygame.time.get_ticks() - self.remove_selection >= 50:
+                self.selected_category = None
+        if self.selected_category is not None and any(pygame.mouse.get_just_released()):
+            self.remove_selection = pygame.time.get_ticks()
         self.search_entry.update()
         self.show_ids = pygame.key.get_pressed()[pygame.K_t] and (
             pygame.key.get_mods() & pygame.KMOD_CTRL
             or pygame.key.get_mods() & pygame.KMOD_META
         )
+        self.selected_hovered = None
 
     def ui(self):
         with self.mili.begin(None, mili.CENTER | mili.FILL | mili.PADLESS):
@@ -78,11 +88,10 @@ class SettingsMenu(common.UIComponent):
                         "update_id": "settings_scroll_left",
                     },
                 ) as cl:
-                    self.ui_base_settings()
-                    self.mili.element((0, 0, 0, self.mult(10)))
-                    self.ui_action_btns()
-                    self.ui_colors()
-                    self.ui_utilities()
+                    if self.selected_category:
+                        self.ui_selected_category()
+                    else:
+                        self.ui_settings_left()
                     self.rect_l = cl.data.absolute_rect
                 self.mili.line_element(
                     [(0, "-100"), (0, "100")],
@@ -90,6 +99,7 @@ class SettingsMenu(common.UIComponent):
                     (0, 0, 1, 0),
                     {"filly": True},
                 )
+                self.mili.id_checkpoint(4850)
                 with self.mili.begin(
                     None,
                     {
@@ -99,8 +109,97 @@ class SettingsMenu(common.UIComponent):
                         "update_id": "settings_scroll_right",
                     },
                 ) as cr:
+                    if self.selected_hovered is not None:
+                        h = self.mult(650)
+                        rr = cr.data.absolute_rect
+                        self.mili.image_element(
+                            self.selected_hovered,
+                            {"cache": "auto"},
+                            (
+                                (rr.left, rr.top + rr.h / 2 - h / 2),
+                                (h * self.appdata.image_ratio, h),
+                            ),
+                            {"ignore_grid": True, "parent_id": 0, "z": 9999},
+                        )
                     self.ui_categories()
                     self.rect_r = cr.data.absolute_rect
+
+    def ui_selected_category_char(self, name: str):
+        with self.mili.begin(
+            None, {"resizey": True, "fillx": True} | mili.X | mili.PADLESS
+        ):
+            image = self.appdata.images.get(
+                self.selected_category.image_prefixed(name), None
+            )
+            if image is None:
+                image = mili.icon.get_google(common.HOURGLASS)
+            h = self.mult(60)
+            it = self.mili.image_element(
+                image,
+                {
+                    "cache": "auto",
+                    "alpha": (80 if name in self.selected_category.ignore else 255),
+                },
+                (0, 0, h * self.appdata.image_ratio, h),
+            )
+            if it.hovered:
+                self.selected_hovered = image
+                self.selected_hovered_name = name
+            self.mili.text_element(
+                self.selected_category.format_item_name(name).replace("_", " ").title(),
+                {
+                    "size": self.mult(16),
+                    "align": "left",
+                    "growx": False,
+                    "growy": False,
+                    "color": (
+                        (80,) * 3 if name in self.selected_category.ignore else "white"
+                    ),
+                },
+                None,
+                mili.FILL,
+            )
+
+    def ui_selected_category(self):
+        self.mili.text_element(
+            f"{self.selected_category.name.replace('_', ' ').title()}'s Characters",
+            {
+                "size": self.mult(26),
+                "cache": "auto",
+            },
+            None,
+            {"offset": self.scroll_left.get_offset()},
+        )
+        amount = len(self.selected_category.downloaded) // 3
+        with self.mili.begin(
+            None,
+            {
+                "resizey": True,
+                "fillx": True,
+                "offset": self.scroll_left.get_offset(),
+                "padx": 0,
+                "pady": 5,
+            }
+            | mili.X,
+        ):
+            with self.mili.begin(None, {"resizey": True, "fillx": True} | mili.PADLESS):
+                for name in self.selected_category.downloaded[: amount + 1]:
+                    self.ui_selected_category_char(name)
+            with self.mili.begin(None, {"resizey": True, "fillx": True} | mili.PADLESS):
+                for name in self.selected_category.downloaded[
+                    amount + 1 : amount * 2 + 1
+                ]:
+                    self.ui_selected_category_char(name)
+            with self.mili.begin(None, {"resizey": True, "fillx": True} | mili.PADLESS):
+                for name in self.selected_category.downloaded[amount * 2 + 1 :]:
+                    self.ui_selected_category_char(name)
+
+    def ui_settings_left(self):
+        self.ui_base_settings()
+        self.mili.element((0, 0, 0, self.mult(10)))
+        self.ui_action_btns()
+        self.ui_colors()
+        self.ui_utilities()
 
     def ui_base_settings(self):
         self.uicommon_setting(
@@ -309,7 +408,7 @@ class SettingsMenu(common.UIComponent):
             color = "white"
             if self.appdata.downloading_amount > 0:
                 color = "orange"
-            self.mili.text_element(
+            it = self.mili.text_element(
                 "Categories",
                 {
                     "size": self.mult(26),
@@ -318,6 +417,9 @@ class SettingsMenu(common.UIComponent):
                 },
                 None,
             )
+            if it.just_released_button == pygame.BUTTON_MIDDLE:
+                self.selected_category = self.appdata.categories[common.ANIMES_UID]
+                self.remove_selection = None
             it = self.mili.element(
                 (0, 0, self.mult(30), self.mult(30)), {"update_id": "cursor"}
             )
@@ -394,10 +496,14 @@ class SettingsMenu(common.UIComponent):
                     "growx": False,
                 },
                 clickable=None
-                if category.downloading
-                else (lambda: setattr(category, "collapsed", not category.collapsed))
-                if category.auto
-                else False,
+                if category.downloading and category.auto
+                else (lambda: setattr(category, "collapsed", not category.collapsed)),
+                rightclickable=(
+                    lambda: (
+                        setattr(self, "selected_category", category),
+                        setattr(self, "remove_selection", None),
+                    )
+                ),
             )
         ]
         if category.downloading:
@@ -436,6 +542,7 @@ class SettingsMenu(common.UIComponent):
                         scroll=self.scroll_right,
                     )
                 )
+                category.check_subtitles()
                 if category.downloading:
                     link_entry.focused = False
                     link_entry.text = link
@@ -507,7 +614,7 @@ class SettingsMenu(common.UIComponent):
 
     def ui_action_btns(self):
         for txt, callback in [
-            ("Apply Custom Characters", self.appdata.apply_custom_chars),
+            ("Apply Custom Items", self.appdata.apply_custom_chars),
             ("Create Backup", self.appdata.create_backup),
             ("Refresh MyAnimeList", self.appdata.refresh_MAL),
         ]:
@@ -658,6 +765,16 @@ class SettingsMenu(common.UIComponent):
         for entry in self.color_entries.values():
             entry.event(e)
         if e.type == pygame.KEYDOWN:
+            if e.key == pygame.K_i and self.selected_hovered:
+                if self.selected_hovered_name in self.selected_category.ignore:
+                    self.selected_category.ignore.remove(self.selected_hovered_name)
+                    self.appdata.load_recent_image(
+                        self.selected_category,
+                        f"user_data/categories/{self.selected_category.uid}/{self.selected_hovered_name}.png",
+                    )
+                else:
+                    self.selected_category.ignore.add(self.selected_hovered_name)
             if e.key == pygame.K_ESCAPE:
                 if self.can_back():
                     self.app.menu = self.app.main_menu
+                    self.mili.clear_memory()

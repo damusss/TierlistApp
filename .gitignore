@@ -14,3 +14,8 @@ test*
 temp*
 *.exe
 user_data/mal.xml
+user_data/categories/anime_logos
+user_data/categories/anime_themes
+user_data/categories/haikyuu_teams
+user_data/categories/live_action
+

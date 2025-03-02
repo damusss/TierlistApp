@@ -23,6 +23,7 @@ class MainMenu(common.UIComponent):
                 )
                 if it.left_just_released:
                     self.app.menu = self.app.settings_menu
+                    self.mili.clear_memory()
                     self.app.settings_back = None
                 it = self.mili.element(
                     (0, 0, self.mult(80), self.mult(80)), {"update_id": "cursor"}
@@ -37,6 +38,7 @@ class MainMenu(common.UIComponent):
                 )
                 if it.left_just_released:
                     self.app.menu = self.app.mal_menu
+                    self.mili.clear_memory()
                     self.app.settings_back = None
             for tierlist in self.appdata.tierlists.values():
                 with self.mili.begin(
@@ -90,6 +92,7 @@ class MainMenu(common.UIComponent):
     def open_tierlist(self, tierlist: data.TierlistData, settings=False):
         self.app.tierlist = tierlist
         self.app.menu = self.app.tierlist_view
+        self.mili.clear_memory()
         self.app.menu.open()
         if settings:
             self.app.menu.action_settings()

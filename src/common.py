@@ -127,6 +127,7 @@ class UIComponent:
         if it.left_just_released:
             if self.can_back():
                 self.action_back()
+                self.mili.clear_memory()
                 self.app.menu = menu_back
 
     def uicommon_top_btn(self, iconname, side, callback, offset=0, othercallback=None):
@@ -189,6 +190,7 @@ class UIComponent:
             | mili.X
             | mili.PADLESS,
         ):
+            self.mili.element(None)
             left_entry.ui(
                 self.mili,
                 (0, 0, 0, self.mult(35)),
@@ -231,6 +233,7 @@ class UIComponent:
         post_txt=None,
         post_style=None,
         clickable=False,
+        rightclickable=False,
     ):
         if scroll is None:
             scroll = self.scroll
@@ -305,13 +308,15 @@ class UIComponent:
                     None,
                     {"blocking": False, "fillx": "20"},
                 )
-            if clickable:
+            if clickable or rightclickable:
                 if cont.hovered:
                     self.mili.rect(
                         {"color": (BG_COL[0] + 5,) * 3, "element_id": cdata.id}
                     )
-                if cont.left_just_released:
+                if clickable and cont.left_just_released:
                     clickable()
+                if rightclickable and cont.just_released_button == pygame.BUTTON_RIGHT:
+                    rightclickable()
         return cdata
 
     def uicommon_buttons(self, buttons):

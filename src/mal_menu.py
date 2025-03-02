@@ -66,6 +66,7 @@ class MALMenu(common.UIComponent):
         )
         self.uicommon_top_btn("settings", "left", self.action_settings, 7)
         self.uicommon_top_btn("refresh", "left", self.appdata.refresh_MAL, 8)
+        self.uicommon_top_btn("find_replace", "left", self.appdata.load_MAL, 9)
         self.ui_filters_preview()
         self.ui_main_cont()
         if self.count != self.prev_count:
@@ -118,23 +119,34 @@ class MALMenu(common.UIComponent):
     def ui_right_cond(self, rcond):
         self.mili.text_element(
             f"{self.appdata.mal_username}'s Anime List",
-            {"size": self.mult(40)},
+            {"size": self.mult(40), "cache": "auto"},
             element_style={"offset": self.scroll_right.get_offset()},
         )
         if self.appdata.mal_episodes_str is not None:
             self.mili.text_element(
                 f"Statistics: {self.appdata.mal_episodes_str}",
-                {"size": self.mult(20), "color": (160,) * 3},
+                {"size": self.mult(20), "color": (160,) * 3, "cache": "auto"},
                 element_style={"offset": self.scroll_right.get_offset()},
             )
         self.sr_rect = rcond.data.absolute_rect
         amount = 0
+        tot_amount = 0
+        all_parents = []
         for score, parents in self.appdata.mal_sorted.items():
+            tot_amount += len(parents)
             parents = [parent for parent in parents if self.filter(parent)]
+            amount += len(parents)
             if len(parents) <= 0:
                 continue
+            all_parents.append((score, parents))
+        if amount != tot_amount and amount > 0:
+            self.mili.text_element(
+                f"Search Stats: {(amount / (tot_amount if tot_amount else 1000000)) * 100:.2f}% of animes match filters",
+                {"size": self.mult(20), "color": (160,) * 3},
+                element_style={"offset": self.scroll_right.get_offset()},
+            )
+        for score, parents in all_parents:
             self.ui_category(score, parents)
-            amount += len(parents)
             self.layer_cache.active = True
         if amount <= 0:
             self.mili.text_element(
@@ -273,6 +285,7 @@ class MALMenu(common.UIComponent):
                         "padx": 0,
                         "pady": 1,
                         "bold": True,
+                        "cache": "auto",
                     },
                 )
             image = self.appdata.images.get(
@@ -294,13 +307,14 @@ class MALMenu(common.UIComponent):
         ):
             self.mili.rect({"color": bar_col})
             self.mili.text_element(
-                f"#{parent.global_i}", {"size": self.mult(18), "bold": True}
+                f"#{parent.global_i}",
+                {"size": self.mult(18), "bold": True, "cache": "auto"},
             )
             self.mili.element(None, {"fillx": True})
             if parent.elapsed_time is not None:
                 self.mili.text_element(
                     f"{parent.elapsed_time} Day{'s' if parent.elapsed_time > 1 else ''}",
-                    {"size": self.mult(16), "color": (150,) * 3},
+                    {"size": self.mult(16), "color": (150,) * 3, "cache": "auto"},
                 )
                 self.mili.element(None, {"fillx": True})
             self.mili.image_element(
@@ -310,7 +324,7 @@ class MALMenu(common.UIComponent):
             )
             self.mili.text_element(
                 f"{parent.episodes_str.replace(' + ', ('+' if self.appdata.mal_small else ' + '))}",
-                {"size": self.mult(18)},
+                {"size": self.mult(18), "cache": "auto"},
             )
 
     def ui_anime_name(self, parent: data.MALParent, color, w):
@@ -329,6 +343,7 @@ class MALMenu(common.UIComponent):
                 "growx": False,
                 "color": color,
                 "wraplen": "100",
+                "cache": "auto",
             },
             (0, 0, w, 0),
         )
@@ -341,6 +356,7 @@ class MALMenu(common.UIComponent):
                 "size": self.mult(30),
                 "align": "left",
                 "color": common.RATED_COLORS[score],
+                "cache": "auto",
             },
             None,
             {"fillx": True, "offset": self.scroll_right.get_offset()},
@@ -354,6 +370,7 @@ class MALMenu(common.UIComponent):
                 "resizey": True,
                 "axis": "x",
                 "grid": True,
+                "flag": mili.PARENT_PRE_ORGANIZE_CHILDREN,
                 "offset": self.scroll_right.get_offset(),
             },
         ):
@@ -376,6 +393,7 @@ class MALMenu(common.UIComponent):
                 "align": "left",
                 "growy": False,
                 "color": (255 if active else 200,) * 3,
+                "cache": "auto",
             },
         )
         if it.left_just_released:
@@ -406,7 +424,7 @@ class MALMenu(common.UIComponent):
         ]:
             self.mili.text_element(
                 title,
-                {"size": self.mult(21)},
+                {"size": self.mult(21), "cache": "auto"},
                 None,
                 {"offset": self.scroll_left.get_offset()},
             )
@@ -434,7 +452,7 @@ class MALMenu(common.UIComponent):
                         self.ui_filter(item, flist)
 
     def ui_filters_preview(self):
-        x = self.mult(30) * 9
+        x = self.mult(30) * 10
         with self.mili.begin(
             (x, 0, self.app.window.size[0] - (x + self.mult(30)), self.mult(30)),
             mili.X
@@ -460,7 +478,12 @@ class MALMenu(common.UIComponent):
                     if not first:
                         self.mili.text_element(
                             "and" if self.filters_and else "or",
-                            {"size": self.mult(12), "color": (120,) * 3, "padx": 0},
+                            {
+                                "size": self.mult(12),
+                                "color": (120,) * 3,
+                                "padx": 0,
+                                "cache": "auto",
+                            },
                         )
                     first = False
                     with self.mili.begin(
@@ -500,6 +523,7 @@ class MALMenu(common.UIComponent):
                                 "color": (white,) * 3,
                                 "padx": 0,
                                 "growy": False,
+                                "cache": "auto",
                             },
                             None,
                             {"blocking": False, "filly": True},
@@ -601,6 +625,7 @@ class MALMenu(common.UIComponent):
 
     def action_settings(self):
         self.app.menu = self.app.settings_menu
+        self.mili.clear_memory()
         self.app.settings_back = self
 
     def action_toggle_filters(self):
@@ -640,3 +665,4 @@ class MALMenu(common.UIComponent):
                     self.action_clear_filters()
                     return
                 self.app.menu = self.app.main_menu
+                self.mili.clear_memory()

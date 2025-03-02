@@ -59,6 +59,8 @@ class CategoryData:
         self.covers_downloaded = 0
         self.collapsed = True
         self.auto = True
+        self.subtitles = {}
+        self.ignore = set()
 
     def load(self, uid, data):
         self.name = data["name"]
@@ -70,6 +72,8 @@ class CategoryData:
             self.cached[key] = set(value)
         self.no_image = data.get("no_image", [])
         self.auto = data.get("auto", True)
+        self.ignore = set(data.get("ignore", set()))
+        self.check_subtitles()
         self.update_downloaded()
         return self
 
@@ -81,7 +85,27 @@ class CategoryData:
             "cached": self.cached,
             "no_image": self.no_image,
             "auto": self.auto,
+            "ignore": self.ignore,
         }
+
+    def format_item_name(self, item):
+        if self.uid != common.ANIMES_UID:
+            return item.replace("_039", "")
+        index = 0
+        if "_" in item:
+            parts = item.split("_")
+            if parts[-1].isdecimal():
+                index = int(parts[-1]) - 1
+                parts.pop(-1)
+                cat_name = "_".join(parts).strip()
+                if cat_name in self.data.categories_uids:
+                    cat_uid = self.data.categories_uids[cat_name]
+                    category = self.data.categories[cat_uid]
+                    subtitle = category.subtitles.get(
+                        index, f"{index + 1 if index != 0 else ''}"
+                    )
+                    return f"{cat_name}_{subtitle}"
+        return item
 
     def open_exporer(self):
         system = platform.system()
@@ -105,6 +129,13 @@ class CategoryData:
                 None,
                 ("Understood"),
             )
+
+    def check_subtitles(self):
+        self.subtitles = {}
+        for i, link in enumerate(self.links):
+            if "," in link:
+                subtitle = link.split(",")[-1].strip()
+                self.subtitles[i] = subtitle
 
     def remove_old_covers(self):
         if self.name.strip() == "":
@@ -132,6 +163,11 @@ class CategoryData:
     def image_prefixed(self, name):
         return f"{self.uid}|{name}"
 
+    def get_raw_link(self, link):
+        if "," in link:
+            return link.split(",")[0].strip()
+        return link
+
     def get_downloaded_of(self, link, include_covers=False):
         if not self.auto:
             return f"({len(self.downloaded)})", True
@@ -141,10 +177,13 @@ class CategoryData:
         if link is None:
             to_download = set()
             for lk in self.links:
+                lk = self.get_raw_link(lk)
                 if lk in self.cached:
                     to_download |= self.cached[lk]
                 else:
                     unknown = True
+        else:
+            link = self.get_raw_link(link)
         if (link in self.cached or link is None) and not unknown:
             if link is not None:
                 to_download = self.cached[link]
@@ -173,6 +212,12 @@ class CategoryData:
         if not self.auto:
             if not os.path.exists(f"user_data/categories/{self.uid}"):
                 os.mkdir(f"user_data/categories/{self.uid}")
+            if not os.path.exists(f"user_data/categories/{self.name}"):
+                os.symlink(
+                    pathlib.Path(f"user_data/categories/{self.uid}").resolve(),
+                    f"user_data/categories/{self.name}",
+                    True,
+                )
             self.update_downloaded()
             self.data.load_category_images(self, True)
             return
@@ -196,6 +241,7 @@ class CategoryData:
         try:
             character_links = set()
             for i, link in enumerate(self.links):
+                link = self.get_raw_link(link)
                 if link not in self.cached:
                     self.cached[link] = set()
                 character_links.update(
@@ -452,6 +498,7 @@ class TierlistData:
         self.ui_tier_name_percentage = 10
         self.distribution_data = common.DISTRIBUTION
         self.ignore_first = False
+        self.use_original = False
 
     def load(self, data):
         self.name = data["name"]
@@ -632,7 +679,12 @@ class Data:
             self.custom_chars_listdir = os.listdir("custom_chars")
         else:
             self.custom_chars_listdir = []
-        self.startup_to_load_categories = list(self.categories.values())
+        self.startup_to_load_categories = [
+            cat for cat in self.categories.values() if cat.auto
+        ]
+        self.manual_to_load = [cat for cat in self.categories.values() if not cat.auto]
+        self.loaded_amount = 0
+        self.should_load_amount = 0
 
         self.load_MAL()
 
@@ -745,6 +797,8 @@ class Data:
                     g_seasons += 1
                     eps += anime.total_amount
                     watched_eps += anime.watched_amount
+            if parent.status == "completed":
+                watched_eps = eps
             g_series += 1
             g_eps += watched_eps
             g_movies += movies
@@ -800,7 +854,11 @@ class Data:
             self.to_load_categories -= 1
             return
         for filename in os.listdir(folder):
-            string = category.image_prefixed(filename.split(".")[0])
+            name = filename.split(".")[0]
+            self.should_load_amount += 1
+            if name in category.ignore:
+                continue
+            string = category.image_prefixed(name)
             if string in self.images and not force:
                 continue
             found = False
@@ -1036,14 +1094,14 @@ class Data:
                     )
                 if category is None:
                     alert.alert(
-                        "Error Applying Custom Character",
-                        f"The category of {filename} '{oricat}' was not found so the custom character could not be applied.",
+                        "Error Applying Custom Item",
+                        f"The category of {filename} '{oricat}' was not found so the custom item could not be applied.",
                     )
                     continue
                 if char not in category.downloaded:
                     alert.alert(
-                        "Error Applying Custom Character",
-                        f"Custom character {char} of category {category.name} does not exist so it could not be applied.",
+                        "Error Applying Custom Item",
+                        f"Custom item {char} of category {category.name} does not exist so it could not be applied.",
                     )
                     continue
                 itemstring = f"{category.uid}|{char}"
@@ -1054,14 +1112,14 @@ class Data:
                         found_categories.append(category)
                 if len(found_categories) == 0:
                     alert.alert(
-                        "Error Applying Custom Character",
-                        f"Custom character {char} was not found in any category so it could not be applied.",
+                        "Error Applying Custom Item",
+                        f"Custom item {char} was not found in any category so it could not be applied.",
                     )
                     continue
                 if len(found_categories) > 1:
                     alert.alert(
-                        "Error Applying Custom Character",
-                        f"Custom character {char} was found in multiple categories {tuple([f'{cat.name}:{cat.uid}' for cat in found_categories])} so it could not be applied. Prefix it with the category name/ID and a '$' to select the category.",
+                        "Error Applying Custom Item",
+                        f"Custom item {char} was found in multiple categories {tuple([f'{cat.name}:{cat.uid}' for cat in found_categories])} so it could not be applied. Prefix it with the category name/ID and a '$' to select the category.",
                     )
                     continue
                 category = found_categories[0]
@@ -1070,4 +1128,4 @@ class Data:
             self.images[itemstring] = image
         self.loaded_custom_chars = []
         if filter is None:
-            alert.message("Custom characters applied")
+            alert.message("Custom items applied")

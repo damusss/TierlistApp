@@ -1,20 +1,29 @@
 import pygame
 import mili
-from src import common
-from src import main_menu
-from src import settings_menu
-from src import tierlist_view
-from src import tierlist_settings_menu
+import sys
+import os
 from src import data
 from src import alert
-from src import screenshot
-from src import mal_menu
+from src import common
+from src.mal_menu import MALMenu
+from src.main_menu import MainMenu
+from src.settings_menu import SettingsMenu
+from src.tierlist_view import TierlistView
+from src.tierlist_settings_menu import TierlistSettingsMenu
+from src.screenshot import ScreenshotWindowManager
+
+if "win" in sys.platform or os.name == "nt":
+    import ctypes
+
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+        "damusss.tierlist_app.1.0"
+    )
 
 
 class TierlistApp(mili.GenericApp):
     def __init__(self):
         assert pygame.vernum >= (2, 5, 2)
-        assert mili.VERSION >= (1, 0, 4)
+        assert mili.VERSION >= (1, 0, 5)
         print(f"MILI {mili.VERSION_STR}")
         pygame.init()
         super().__init__(
@@ -25,7 +34,7 @@ class TierlistApp(mili.GenericApp):
             target_framerate=120,
         )
         pygame.key.set_repeat(300, 80)
-        mili.icon.setup("appdata", "white", google_size=255)
+        mili.icon.setup("appdata", "white", svg_size=255)
         mili.InteractionCursor.setup(update_id="cursor")
         self.mili.default_styles(
             image={"smoothscale": True},
@@ -41,14 +50,14 @@ class TierlistApp(mili.GenericApp):
         )
         self.frozen = False
         self.data = data.Data(self)
-        self.main_menu = main_menu.MainMenu(self)
-        self.settings_menu = settings_menu.SettingsMenu(self)
-        self.tierlist_view = tierlist_view.TierlistView(self)
-        self.tierlist_settings_menu = tierlist_settings_menu.TierlistSettingsMenu(self)
-        self.mal_menu = mal_menu.MALMenu(self)
+        self.main_menu = MainMenu(self)
+        self.settings_menu = SettingsMenu(self)
+        self.tierlist_view = TierlistView(self)
+        self.tierlist_settings_menu = TierlistSettingsMenu(self)
+        self.mal_menu = MALMenu(self)
         self.tierlist: data.TierlistData = None
         self.alert_system = alert.AlertSystem(self)
-        self.screenshot = screenshot.ScreenshotWindowManager(self)
+        self.screenshot = ScreenshotWindowManager(self)
         self.last_save = pygame.time.get_ticks()
         self.menu: common.UIComponent = self.main_menu
         self.settings_back = None
@@ -169,6 +178,10 @@ class TierlistApp(mili.GenericApp):
                 self.data.save()
             if e.key == pygame.K_F4:
                 self.frozen = not self.frozen
+            if e.key == pygame.K_m:
+                print(
+                    f"Should have loaded: {self.data.should_load_amount}, loaded {len(self.data.images)}"
+                )
 
     def mult(self, a):
         return a
