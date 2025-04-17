@@ -60,6 +60,7 @@ class CategoryData:
         self.collapsed = True
         self.auto = True
         self.subtitles = {}
+        self.score_categories = dict.fromkeys(common.SCORE_CATEGORIES, "-")
         self.ignore = set()
 
     def load(self, uid, data):
@@ -73,6 +74,10 @@ class CategoryData:
         self.no_image = data.get("no_image", [])
         self.auto = data.get("auto", True)
         self.ignore = set(data.get("ignore", set()))
+        self.score_categories = data.get("score_categories", {})
+        for cat in common.SCORE_CATEGORIES:
+            if cat not in self.score_categories:
+                self.score_categories[cat] = "-"
         self.check_subtitles()
         self.update_downloaded()
         return self
@@ -86,6 +91,7 @@ class CategoryData:
             "no_image": self.no_image,
             "auto": self.auto,
             "ignore": self.ignore,
+            "score_categories": self.score_categories,
         }
 
     def format_item_name(self, item):
@@ -422,9 +428,14 @@ class CategoryData:
         soup = bs4.BeautifulSoup(response.content, "html.parser")
         if not os.path.exists(f"user_data/categories/{common.ANIMES_UID}/{cname}.png"):
             cover = soup.find("div", {"class": "leftside"})
-            cover_link = list(list(list(cover.children)[1].children)[1].children)[
-                1
-            ].attrs["data-src"]
+            if "manga" in raw_link:
+                cover_link = list(list(list(cover.children)[0].children)[0])[0].attrs[
+                    "data-src"
+                ]
+            else:
+                cover_link = list(list(list(cover.children)[1].children)[1].children)[
+                    1
+                ].attrs["data-src"]
             self.async_download_character_image(
                 cover_link, "ANIMES", cname, is_anime=True
             )
@@ -436,15 +447,23 @@ class CategoryData:
                 return set()
         if not only_anime:
             try:
+                cword = "manga" if "manga" in raw_link else "anime"
                 cached = set()
                 container = soup.find(
                     "div",
-                    {"class": "anime-character-container js-anime-character-container"},
+                    {
+                        "class": f"{cword}-character-container js-{cword}-character-container"
+                    },
                 )
                 to_download = set()
                 for child in container.children:
+                    if child.name == "article":
+                        continue
                     if self.abort:
                         raise SystemExit
+                    if "manga" in raw_link:
+                        if isinstance(child, bs4.NavigableString):
+                            continue
                     child: bs4.element.Tag = self.async_recursive_get_first_children(
                         child, 4
                     )
@@ -471,7 +490,7 @@ class CategoryData:
             except Exception:
                 alert.alert(
                     "Error Getting Characters",
-                    f"An error was raised while trying to get the characters of {raw_link}. This probably happened because the link provided has an unsupported layout. Make sure the link follows the format https://myanimelist.net/anime/<NUMBER>/<ANIME NAME>",
+                    f"An error was raised while trying to get the characters of {raw_link}. This probably happened because the link provided has an unsupported layout. Make sure the link follows the format https://myanimelist.net/anime|manga/<NUMBER>/<ANIME NAME>",
                 )
         return set()
 
@@ -734,9 +753,11 @@ class Data:
         for cat in self.categories.values():
             dobreak = False
             for i, link in enumerate(cat.links):
-                link_uid = link.replace("https://myanimelist.net/anime/", "").split(
-                    "/"
-                )[0]
+                link_uid = (
+                    link.replace("https://myanimelist.net/anime/", "")
+                    .replace("https://myanimelist.net/manga/", "")
+                    .split("/")[0]
+                )
                 if link_uid == uid:
                     category = cat
                     index = i
@@ -865,6 +886,7 @@ class Data:
             for test_str in [
                 f"{category.uid}${filename}",
                 f"{category.name}${filename}",
+                f"_{category.name}${filename}",
                 filename,
             ]:
                 if os.path.exists(f"custom_chars/{test_str}"):

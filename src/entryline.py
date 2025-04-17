@@ -16,6 +16,30 @@ FILE_FORBIDDEN = [
 ]
 
 
+class CursorComponent(mili.typing.ComponentProtocol):
+    def __init__(self): ...
+
+    def added(self, ctx, data, style, element):
+        ...
+
+    def draw(self, ctx, data, style, element, absolute_rect):
+        csize = style["csize"]
+        offset = style["offset"]
+        entry = data
+        if not entry.cursor_on or not entry.focused:
+            return
+        curs = absolute_rect.h / 1.5
+        xpos = absolute_rect.x + csize - offset + 5
+        if offset != 0:
+            xpos += 5
+        pygame.draw.line(
+            ctx._canva,
+            (255,) * 3,
+            (xpos, absolute_rect.y + absolute_rect.h / 2 - curs / 2),
+            (xpos, absolute_rect.y + absolute_rect.h / 2 + curs / 2),
+        )
+
+
 class Entryline:
     def __init__(
         self,
@@ -157,20 +181,6 @@ class Entryline:
         self.cursor_on = True
         self.cursor_time = pygame.time.get_ticks()
 
-    def draw_cursor(self, csize, offset, canva, element_data, rect):
-        if not self.cursor_on or not self.focused:
-            return
-        curs = rect.h / 1.5
-        xpos = rect.x + csize - offset + 5
-        if offset != 0:
-            xpos += 5
-        pygame.draw.line(
-            canva,
-            (255,) * 3,
-            (xpos, rect.y + rect.h / 2 - curs / 2),
-            (xpos, rect.y + rect.h / 2 + curs / 2),
-        )
-
     def ui(
         self,
         mili_: mili.MILI,
@@ -212,11 +222,9 @@ class Entryline:
                     "align": "center",
                     "offset": (-offsetx, 0),
                     "blocking": False,
-                    "post_draw_func": functools.partial(
-                        self.draw_cursor, size.x, offsetx
-                    ),
                 },
             ):
+                mili_.custom_component("cursor", self, {"csize": size.x, "offset": offsetx})
                 text = self.text
                 if len(self.text) == 1:
                     text = f"{text} "

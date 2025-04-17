@@ -533,7 +533,7 @@ class SettingsMenu(common.UIComponent):
                         "#0EAAFC"
                         if link_entry.texts.startswith(
                             r"https://myanimelist.net/anime/"
-                        )
+                        ) or link_entry.texts.startswith(r"https://myanimelist.net/manga/")
                         else "red",
                         "orange"
                         if category.downloading

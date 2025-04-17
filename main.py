@@ -7,6 +7,7 @@ from src import alert
 from src import common
 from src.mal_menu import MALMenu
 from src.main_menu import MainMenu
+from src.entryline import CursorComponent
 from src.settings_menu import SettingsMenu
 from src.tierlist_view import TierlistView
 from src.tierlist_settings_menu import TierlistSettingsMenu
@@ -18,7 +19,6 @@ if "win" in sys.platform or os.name == "nt":
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
         "damusss.tierlist_app.1.0"
     )
-
 
 class TierlistApp(mili.GenericApp):
     def __init__(self):
@@ -48,6 +48,7 @@ class TierlistApp(mili.GenericApp):
             line={"color": "white"},
             rect={"border_radius": 0},
         )
+        mili.register_custom_component("cursor", CursorComponent())
         self.frozen = False
         self.data = data.Data(self)
         self.main_menu = MainMenu(self)
@@ -67,8 +68,15 @@ class TierlistApp(mili.GenericApp):
         pygame.image.save(surf, "appdata/icon.png")
         self.window.minimum_size = (500, 500)
         self.custom_borders = mili.CustomWindowBorders(
-            self.window, 2, 3, 30, uniform_resize_key=None
+            self.window, 3, 3, 30, uniform_resize_key=None, minimum_ratio=1920 / 1080
         )
+        self.custom_behavior = mili.CustomWindowBehavior(self.window, self.custom_borders, pygame.display.get_desktop_sizes()[0])
+        self.border_mouse = False
+        self.scaler = mili.AdaptiveUIScaler(self.window, (1920, 1080))
+        self.mult = self.scaler.scale
+
+    def can_interact(self):
+        return self.custom_borders.cumulative_relative.length() == 0
 
     def on_quit(self):
         self.data.save()
@@ -97,6 +105,8 @@ class TierlistApp(mili.GenericApp):
         self.menu.update()
         self.update_auto_download()
         self.update_reload()
+        self.scaler.update()
+        self.border_mouse = self.custom_borders.update()
 
     def update_auto_download(self):
         if self.data.auto_download:
@@ -148,19 +158,25 @@ class TierlistApp(mili.GenericApp):
             {"color": (common.BG_COL[0] + 40,) * 3, "outline": 1, "draw_above": True}
         )
         if self.alert_system.update():
-            self.menu.uicommon_top_btn(
-                "close",
-                "right",
-                self.quit
-                if self.menu.can_exit() and self.settings_menu.can_exit()
-                else None,
-                othercallback=self.exit_alert,
-            )
+            if (
+                self.menu != self.mal_menu
+                or not self.mal_menu.parent_fullscreen
+                or self.mal_menu.parent is None
+            ):
+                self.menu.uicommon_top_btn(
+                    "close",
+                    "right",
+                    self.quit
+                    if self.menu.can_exit() and self.settings_menu.can_exit()
+                    else None,
+                    othercallback=self.exit_alert,
+                )
             self.menu.ui()
             self.alert_system.ui_message()
         else:
             self.tierlist_view.layer_cache.active = False
-        mili.InteractionCursor.apply()
+        if not self.border_mouse:
+            mili.InteractionCursor.apply()
 
     def exit_alert(self):
         alert.alert(
@@ -182,9 +198,6 @@ class TierlistApp(mili.GenericApp):
                 print(
                     f"Should have loaded: {self.data.should_load_amount}, loaded {len(self.data.images)}"
                 )
-
-    def mult(self, a):
-        return a
 
 
 if __name__ == "__main__":

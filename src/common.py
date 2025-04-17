@@ -27,8 +27,8 @@ RATED_NAMES = {
     8: "Good (8/10)",
     7: "Alright (7/10)",
     6: "Decent (6/10)",
-    5: "Bad (<=5/10)",
-    2: "Dogshit (2/10)",
+    5: "Bad (5/10)",
+    2: "Dogshit (1-4/10)",
     0: "Unrated (-/10)",
 }
 RATED_NAMES_SHORT = {
@@ -45,13 +45,44 @@ RATED_NAMES_SHORT = {
 RATED_COLORS = {
     10: "#FFC000",
     9.5: "#ce8100",
-    9: "#BE93E4",
+    9: "#9E93E4",
     8: "#17B169",
     7: "#6CB4EE",
     6: "#fd5c63",
     5: "#ff0000",
+    4: "#aa0000",
+    3: "#aa0000",
     2: "#8b0000",
+    1: "#6a0000",
     0: "white",
+}
+SCORE_CATEGORIES = [
+    "plot",
+    "characters",
+    "worldbuilding",
+    "ending",
+    "art",
+    "themes",
+    "emotion",
+    "romance",
+    "introspection",
+    "philosophy",
+    "comicity",
+    "aura",
+]
+SCORE_CATEGORIES_LABELS = {
+    "plot": "Plot",
+    "characters": "Characters",
+    "worldbuilding": "Worldbuilding",
+    "ending": "Ending",
+    "art": "Art/Animation",
+    "themes": "Music Themes",
+    "emotion": "Emotional Impact",
+    "romance": "Romanticy",
+    "introspection": "Introspection",
+    "philosophy": "Philosophy",
+    "comicity": "Comicity",
+    "aura": "Aura",
 }
 
 
@@ -124,7 +155,7 @@ class UIComponent:
             mili.icon.get_google("arrow_back", "white"),
             {"alpha": cond(it, *ALPHAS), "cache": "auto"},
         )
-        if it.left_just_released:
+        if it.left_just_released and self.app.can_interact():
             if self.can_back():
                 self.action_back()
                 self.mili.clear_memory()
@@ -148,7 +179,7 @@ class UIComponent:
             mili.icon.get_google(iconname),
             {"alpha": cond(it, *ALPHAS), "cache": "auto"},
         )
-        if it.left_just_released:
+        if it.left_just_released and self.app.can_interact():
             if callback:
                 callback()
             elif othercallback:
@@ -259,7 +290,7 @@ class UIComponent:
             self.mili.text_element(
                 text,
                 {
-                    "size": 20,
+                    "size": self.mult(20),
                     "align": "right",
                     "font_align": pygame.FONT_RIGHT,
                     "color": namecol,

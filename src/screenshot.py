@@ -25,6 +25,7 @@ class ScreenshotWindowManager:
         self.only_marked = False
         self.global_i = 0
         self.image_h = 1
+        self.category_cache = None
         self.lowest_card_bottom = 0
         self.dragging_category = None
         self.mili.default_styles(

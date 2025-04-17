@@ -1,4 +1,5 @@
 import mili
+import pygame
 from src import data
 from src import common
 from src import alert
@@ -8,8 +9,13 @@ from functools import partial
 class MainMenu(common.UIComponent):
     name = "main"
 
+    def init(self):
+        self.background = pygame.image.load("appdata/bg.png").convert_alpha()
+        self.bg_cache = mili.ImageCache()
+
     def ui(self):
         with self.mili.begin(None, {"fillx": True, "filly": True} | mili.CENTER):
+            self.mili.image(self.background, {"fill": True, "cache": self.bg_cache})
             with self.mili.begin(None, mili.RESIZE | mili.X | mili.PADLESS):
                 it = self.mili.element(
                     (0, 0, self.mult(80), self.mult(80)), {"update_id": "cursor"}
@@ -49,9 +55,18 @@ class MainMenu(common.UIComponent):
                     | mili.X,
                 ):
                     it = self.mili.element(None, {"fillx": "30", "update_id": "cursor"})
-                    self.mili.rect(
-                        {"color": (common.cond(it, *common.BTN_COLS) + 5,) * 3}
+                    self.mili.image(
+                        common.SURF,
+                        {
+                            "fill_color": (common.cond(it, *common.BTN_COLS) + 5,) * 3,
+                            "alpha": 120,
+                            "fill": True,
+                            "cache": "auto",
+                        },
                     )
+                    # self.mili.rect(
+                    #    {"color": (common.cond(it, *common.BTN_COLS) + 5,) * 3}
+                    # )
                     self.mili.text(
                         f"{tierlist.name.upper().replace('_', ' ')}",
                         {
@@ -65,7 +80,15 @@ class MainMenu(common.UIComponent):
                     it = self.mili.element(
                         (0, 0, self.mult(40), self.mult(40)), {"update_id": "cursor"}
                     )
-                    self.mili.rect({"color": (common.cond(it, *common.BTN_COLS),) * 3})
+                    self.mili.image(
+                        common.SURF,
+                        {
+                            "fill_color": (common.cond(it, *common.BTN_COLS) + 5,) * 3,
+                            "alpha": 120,
+                            "fill": True,
+                            "cache": "auto",
+                        },
+                    )
                     self.mili.image(
                         mili.icon.get_google("settings"),
                         {
