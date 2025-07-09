@@ -62,6 +62,7 @@ class CategoryData:
         self.subtitles = {}
         self.score_categories = dict.fromkeys(common.SCORE_CATEGORIES, "-")
         self.ignore = set()
+        self.best_chars = []
 
     def load(self, uid, data):
         self.name = data["name"]
@@ -78,6 +79,7 @@ class CategoryData:
         for cat in common.SCORE_CATEGORIES:
             if cat not in self.score_categories:
                 self.score_categories[cat] = "-"
+        self.best_chars = data.get("best_chars", [])
         self.check_subtitles()
         self.update_downloaded()
         return self
@@ -92,6 +94,7 @@ class CategoryData:
             "auto": self.auto,
             "ignore": self.ignore,
             "score_categories": self.score_categories,
+            "best_chars": self.best_chars,
         }
 
     def format_item_name(self, item):
@@ -567,6 +570,7 @@ class MALParent:
         self.status = "completed"
         self.global_i = 0
         self.elapsed_time = 0
+        self.best_char = None
 
     def __str__(self):
         return f"{self.category.name}"
@@ -586,6 +590,8 @@ class MALAnime:
         status,
         score,
         tags,
+        manga=False,
+        volumes=0,
     ):
         def get_date(date):
             year, month, day = date.split("-")
@@ -598,13 +604,15 @@ class MALAnime:
 
         self.index = index
         self.movie = movie
+        self.manga = manga
+        self.volumes = volumes
         self.total_amount = int(total_amount)
         self.watched_amount = int(watched_amount)
         self.status = status.replace(" ", "_").lower()
         self.score = int(score)
         self.start_date = get_date(start_date)
         self.end_date = get_date(end_date)
-        if self.end_date is None and self.status == "watching":
+        if self.end_date is None and self.status in ["watching", "reading"]:
             self.end_date = datetime.now()
         self.elapsed_time = None
         if self.start_date is not None and self.end_date is not None:
@@ -729,24 +737,39 @@ class Data:
             return
         with open("user_data/mal.xml", "w", encoding="utf-8") as file:
             file.write(response.text)
+        manga_response = request_wrapper(
+            "Could not refresh MyAnimeList Manga data",
+            "https://malscraper.azurewebsites.net/scrape",
+            get=False,
+            data={"username": self.mal_username, "listtype": "manga"},
+        )
+        if manga_response is not None:
+            with open("user_data/mml.xml", "w", encoding="utf-8") as file:
+                file.write(manga_response.text)
         self.load_MAL()
         alert.message("Refreshed MyAnimeList")
 
-    def MAL_process_element(self, element: XMLTree.Element):
+    def MAL_process_element(self, element: XMLTree.Element, manga=False):
+        volumes = 0
         status = element.find("my_status").text
-        if status in ["Plan To Watch"]:
-            return
+        #if status.lower() in ["plan to watch"]:
+        #    return
         start, end = (
             element.find("my_start_date").text,
             element.find("my_finish_date").text,
         )
-        movie = element.find("series_type").text == "Movie"
+        if not manga:
+            movie = element.find("series_type").text == "Movie"
+        else:
+            movie = False
         score = element.find("my_score").text
-        uid = element.find("series_animedb_id").text
+        uid = element.find("manga_mangadb_id" if manga else "series_animedb_id").text
         episodes, watched = (
-            element.find("series_episodes").text,
-            element.find("my_watched_episodes").text,
+            element.find("manga_chapters" if manga else "series_episodes").text,
+            element.find("my_read_chapters" if manga else "my_watched_episodes").text,
         )
+        if manga:
+            volumes = element.find("manga_volumes").text
         tags = element.find("my_tags").text
         category = None
         index = -1
@@ -767,21 +790,35 @@ class Data:
                 break
         if category is None:
             return
-        if category.uid not in self.mal_data:
+        if category.uid not in self.mal_data or self.mal_data[category.uid] is None:
             self.mal_data[category.uid] = MALParent(category)
         parent = self.mal_data[category.uid]
         anime = MALAnime(
-            index, movie, episodes, watched, start, end, status, score, tags
+            index,
+            movie,
+            episodes,
+            watched,
+            start,
+            end,
+            status,
+            score,
+            tags,
+            manga,
+            volumes,
         )
         parent.animes[index] = anime
 
-    def get_episodes_str(self, watched_eps, eps, movies):
-        return f"{f'{watched_eps}{f"/{eps}" if watched_eps != eps else ""}' if eps > 0 else ''}{f'{" + " if eps > 0 and movies > 0 else ""}{movies} Movie{"s" if movies > 1 else ""}' if movies > 0 else ''}"
+    def get_episodes_str(self, watched_eps, eps, movies, read_chapters, chapters):
+        ending = ""
+        if chapters > 0:
+            ending = f" + {read_chapters}{f'/{chapters}' if read_chapters != chapters else ''} Chapters"
+        return f"{f'{watched_eps}{f"/{eps}" if watched_eps != eps else ""}' if eps > 0 else ''}{f'{" + " if eps > 0 and movies > 0 else ""}{movies} Movie{"s" if movies > 1 else ""}' if movies > 0 else ''}{ending}"
 
     def load_MAL(self):
+        self.score_sorted_categories = []
         self.mal_data: dict[int, MALParent] = {}
         self.mal_episodes_str = None
-        g_eps = g_seasons = g_movies = g_series = 0
+        g_eps = g_seasons = g_movies = g_series = g_manga = g_chapters = 0
         self.mal_sorted = {}
         if not os.path.exists("user_data/mal.xml"):
             return
@@ -789,6 +826,11 @@ class Data:
             tree = XMLTree.fromstring(file.read())
             for element in tree.findall("anime"):
                 self.MAL_process_element(element)
+        if os.path.exists("user_data/mml.xml"):
+            with open("user_data/mml.xml", "r", encoding="utf-8") as file:
+                tree = XMLTree.fromstring(file.read())
+                for element in tree.findall("manga"):
+                    self.MAL_process_element(element, True)
         tierlist = self.tierlists.get("fav_animes", None)
         keys = [10, 9.5, 9, 8, 7, 6, 5, 2]
         if tierlist is None:
@@ -803,6 +845,8 @@ class Data:
             watched_eps = 0
             movies = 0
             last_end = None
+            chapters = 0
+            read_chapters = 0
             for anime in parent.animes.values():
                 tags |= anime.tags
                 if anime.elapsed_time is not None:
@@ -814,6 +858,10 @@ class Data:
                     parent.status = anime.status
                 if anime.movie:
                     movies += 1
+                elif anime.manga:
+                    g_manga += 1
+                    chapters += anime.total_amount
+                    read_chapters += anime.watched_amount
                 else:
                     g_seasons += 1
                     eps += anime.total_amount
@@ -823,9 +871,12 @@ class Data:
             g_series += 1
             g_eps += watched_eps
             g_movies += movies
-            if len(parent.animes) == 1 and parent.animes[0].movie:
+            g_chapters += read_chapters
+            if len(parent.animes) == 1 and parent.animes[list(parent.animes.keys())[0]].movie:
                 g_series -= 1
-            parent.episodes_str = self.get_episodes_str(watched_eps, eps, movies)
+            parent.episodes_str = self.get_episodes_str(
+                watched_eps, eps, movies, read_chapters, chapters
+            )
             parent.tags = tags
             if tierlist is None:
                 if "almost10" in tags:
@@ -851,14 +902,22 @@ class Data:
                 for key, value in self.mal_sorted.items()
             }
         global_i = 1
-        for parents in self.mal_sorted.values():
+        for key, parents in list(self.mal_sorted.items()):
+            parents = [a for a in parents if a is not None]
             for parent in parents:
+                parent: MALParent
                 if parent.elapsed_time == 0:
                     parent.elapsed_time = None
                 parent.global_i = global_i
                 global_i += 1
+                self.score_sorted_categories.append(parent.category)
+            self.mal_sorted[key] = parents
 
-        self.mal_episodes_str = f"{len(self.mal_data)} Animes, {g_series} TV Series, {g_seasons} Seasons, {g_eps} Episodes, {g_movies} Movies"
+        self.mal_episodes_str = f"{len(self.mal_data)} Animes, {g_series} TV Series, {g_seasons} Seasons, {g_eps} Episodes, {g_movies} Movies, {g_manga} Mangas, {g_chapters} Chapters"
+
+        for parent in self.mal_data.values():
+            if len(parent.category.best_chars) > 0:
+                parent.best_char = parent.category.image_prefixed(parent.category.best_chars[0])
 
     def load_category_images(self, category: CategoryData, force=False):
         if common.THREADED:
@@ -891,14 +950,14 @@ class Data:
             ]:
                 if os.path.exists(f"custom_chars/{test_str}"):
                     try:
-                        image = pygame.image.load(
-                            f"custom_chars/{test_str}"
-                        ).convert_alpha()
+                        image = pygame.image.load(f"custom_chars/{test_str}")
+                        if not common.USE_RENDERER:
+                            image = image.convert_alpha()
                         self.images[string] = image
                         if category.uid == common.ANIMES_UID:
-                            image2 = pygame.image.load(
-                                folder + f"/{filename}"
-                            ).convert_alpha()
+                            image2 = pygame.image.load(folder + f"/{filename}")
+                            if not common.USE_RENDERER:
+                                image = image.convert_alpha()
                             self.images["original_" + string] = image2
                         self.loaded_custom_chars.append(test_str)
                         found = True
@@ -909,11 +968,13 @@ class Data:
                 continue
             try:
                 image = pygame.image.load(folder + f"/{filename}")
+                if not common.USE_RENDERER:
+                    image = image.convert_alpha()
 
             except pygame.error as e:
                 self.image_load_error(folder + f"/{filename}", e)
                 continue
-            img = image.convert_alpha()
+            img = image
             self.images[string] = img
             if category.uid == common.ANIMES_UID:
                 self.images["original_" + string] = img
@@ -944,7 +1005,8 @@ class Data:
         except pygame.error as e:
             self.image_load_error(path, e)
             return
-        img = image.convert_alpha()
+        if not common.USE_RENDERER:
+            img = image.convert_alpha()
         self.images[string] = img
         if category.uid == common.ANIMES_UID:
             self.images["original_" + string] = img
@@ -1121,11 +1183,14 @@ class Data:
                     )
                     continue
                 if char not in category.downloaded:
-                    alert.alert(
-                        "Error Applying Custom Item",
-                        f"Custom item {char} of category {category.name} does not exist so it could not be applied.",
-                    )
-                    continue
+                    if char.title() in category.downloaded:
+                        char = char.title()
+                    else:
+                        alert.alert(
+                            "Error Applying Custom Item",
+                            f"Custom item {char} of category {category.name} does not exist so it could not be applied.",
+                        )
+                        continue
                 itemstring = f"{category.uid}|{char}"
             else:
                 found_categories = []
@@ -1146,7 +1211,9 @@ class Data:
                     continue
                 category = found_categories[0]
                 itemstring = f"{category.uid}|{char}"
-            image = pygame.image.load(f"custom_chars/{filename}").convert_alpha()
+            image = pygame.image.load(f"custom_chars/{filename}")
+            if not common.USE_RENDERER:
+                image = image.convert_alpha()
             self.images[itemstring] = image
         self.loaded_custom_chars = []
         if filter is None:

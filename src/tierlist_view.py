@@ -1145,6 +1145,7 @@ class TierlistView(common.UIComponent):
                 self.image_h + e.y * 5, 10, self.app.window.size[1]
             )
             self.set_image_h(new_h)
+            self.tiers_cache.refresh()
         else:
             self.event_scroll(e, self.categories_scroll, self.categories_rect)
             self.event_scroll(e, self.category_scroll, self.category_rect)
@@ -1197,6 +1198,7 @@ class TierlistView(common.UIComponent):
                 self.appdata.ui_categories_col_percentage = pygame.math.clamp(
                     self.appdata.ui_categories_col_percentage + speed, 5, 40
                 )
+            self.tiers_cache.refresh()
 
     def event_keys(self, e):
         if e.key == pygame.K_a and self.selected_obj is not None:

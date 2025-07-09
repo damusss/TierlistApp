@@ -33,7 +33,7 @@ class CursorComponent(mili.typing.ComponentProtocol):
         if offset != 0:
             xpos += 5
         pygame.draw.line(
-            ctx._canva,
+            ctx._canva._surface,
             (255,) * 3,
             (xpos, absolute_rect.y + absolute_rect.h / 2 - curs / 2),
             (xpos, absolute_rect.y + absolute_rect.h / 2 + curs / 2),

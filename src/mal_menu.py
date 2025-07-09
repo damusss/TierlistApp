@@ -183,8 +183,10 @@ class MALMenu(common.UIComponent):
         bar_col = {
             "completed": (25,) * 3,
             "watching": "#002203",
+            "reading": "#002203",
             "dropped": "#270109",
             "on-hold": "#282000",
+            "plan_to_watch": "gray30",
         }[self.parent.status]
         with self.mili.begin(
             ((0, 0), self.app.window.size if self.parent_fullscreen else size),
@@ -219,7 +221,6 @@ class MALMenu(common.UIComponent):
                 ret = self.ui_parent_close(cont)
                 if ret:
                     return
-
                 h = cont.data.rect.h - cont.data.grid.pady * 2
                 w = h * self.appdata.image_ratio
                 image = self.appdata.images.get(f"0|{self.parent.category.name}", None)
@@ -234,15 +235,56 @@ class MALMenu(common.UIComponent):
                     self.ui_anime_name(self.parent, color, right.data.rect.w, 43)
                     self.mili.element(None, {"filly": "3"})
                     self.ui_parent_infobar(color, bar_col, right)
-                    self.ui_parent_scores()
+                    if self.parent.best_char is None:
+                        self.ui_parent_scores()
+                    else:
+                        with self.mili.begin(
+                            None,
+                            {
+                                "filly": True,
+                                "fillx": True,
+                                "pad": 0,
+                                "align": "center",
+                                "default_align": "center",
+                                "anchor": "center",
+                                "axis": "x",
+                            },
+                        ):
+                            self.ui_parent_scores()
+                            image = self.appdata.images.get(self.parent.best_char, None)
+                            if image:
+                                iheight = cont.data.rect.h / (2.2 if not self.parent_fullscreen else 1.8)
+                                iw = self.appdata.image_ratio * iheight
+                                with self.mili.begin(
+                                    None,
+                                    {
+                                        "resizex": True,
+                                        "filly": True,
+                                        "pad": 0,
+                                        "default_align": "center",
+                                        "anchor": "center"
+                                    },
+                                ):
+                                    self.mili.text_element(
+                                        self.parent.category.format_item_name(
+                                            self.parent.best_char.split("|")[-1]
+                                        ).replace("_", " "), {"size": self.mult(20), "color": common.RATED_COLORS[10]}
+                                    )
+                                    self.mili.image_element(
+                                        image,
+                                        {"smoothscale": True, "cache": "auto"},
+                                        (0, 0, iw, iheight),
+                                    )
                     if len(self.parent.animes) > 1:
                         self.ui_parent_animes()
 
     def ui_parent_scores(self):
+        if self.show_filters:
+            return
         with self.mili.begin(
             None,
             {
-                "fillx": "60",
+                "fillx": "60" if self.parent.best_char is None else "85",
                 "filly": True,
                 "axis": "x",
                 "pady": 0,
@@ -414,8 +456,10 @@ class MALMenu(common.UIComponent):
             bar_col = {
                 "completed": (25,) * 3,
                 "watching": "#002203",
+                "reading": "#002203",
                 "dropped": "#270109",
                 "on-hold": "#282000",
+                "plan_to_watch": "gray30",
             }[parent.status]
             br = "0"
             image = self.appdata.images.get(f"0|{parent.category.name}", None)
@@ -704,10 +748,12 @@ class MALMenu(common.UIComponent):
                 [
                     "TV",
                     "Movie",
+                    "Manga",
                     "Couple",
                     "Trilogy",
                     "Saga",
                     "Watching",
+                    "Reading",
                     "Dropped",
                     "On Hold",
                 ],
@@ -845,9 +891,11 @@ class MALMenu(common.UIComponent):
         if self.filters_and:
             if "Movie" in self.filters and not anime.movie:
                 return False
+            if "Manga" in self.filters and not anime.manga:
+                return False
             if "TV" in self.filters and anime.movie:
                 return False
-            for status in ["Watching", "Dropped", "On Hold"]:
+            for status in ["Watching", "Reading", "Dropped", "On Hold"]:
                 if (
                     status in self.filters
                     and anime.status != status.replace(" ", "_").lower()
@@ -863,9 +911,11 @@ class MALMenu(common.UIComponent):
         else:
             if "Movie" in self.filters and anime.movie:
                 return True
+            if "Manga" in self.filters and anime.manga:
+                return True
             if "TV" in self.filters and not anime.movie:
                 return True
-            for status in ["Watching", "Dropped", "On Hold"]:
+            for status in ["Watching", "Reading", "Dropped", "On Hold"]:
                 if (
                     status in self.filters
                     and anime.status == status.replace(" ", "_").lower()

@@ -9,6 +9,7 @@ from src import entryline
 if typing.TYPE_CHECKING:
     from main import TierlistApp
 
+USE_RENDERER = False
 BG_COL = (15,) * 3
 ANIMES_UID = 0
 ALPHAS = 160, 255, 100

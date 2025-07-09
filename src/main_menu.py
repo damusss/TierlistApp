@@ -10,7 +10,9 @@ class MainMenu(common.UIComponent):
     name = "main"
 
     def init(self):
-        self.background = pygame.image.load("appdata/bg.png").convert_alpha()
+        self.background = pygame.image.load("appdata/bg.png")
+        if not common.USE_RENDERER:
+            self.background = self.background.convert_alpha()
         self.bg_cache = mili.ImageCache()
 
     def ui(self):
@@ -46,6 +48,20 @@ class MainMenu(common.UIComponent):
                     self.app.menu = self.app.mal_menu
                     self.mili.clear_memory()
                     self.app.settings_back = None
+                with self.mili.element(
+                    (0, 0, self.mult(80), self.mult(80)), {"update_id": "cursor"}
+                ) as it:
+                    self.mili.image(
+                        mili.icon.get_google("stars"),
+                        {
+                            "alpha": common.cond(it, *common.ALPHAS),
+                            "cache": "auto",
+                        },
+                    )
+                    if it.left_clicked:
+                        self.app.menu = self.app.best_chars_menu
+                        self.mili.clear_memory()
+                        self.app.settings_back = None
             for tierlist in self.appdata.tierlists.values():
                 with self.mili.begin(
                     None,

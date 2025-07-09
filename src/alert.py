@@ -53,6 +53,7 @@ class AlertData:
                         "slow_grow": True,
                         "growx": False,
                         "cache": "auto",
+                        "rich": True
                     },
                     (0, 0, parent.data.rect.w, 0),
                 )

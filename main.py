@@ -10,8 +10,10 @@ from src.main_menu import MainMenu
 from src.entryline import CursorComponent
 from src.settings_menu import SettingsMenu
 from src.tierlist_view import TierlistView
+from src.best_chars import BestCharsMenu
 from src.tierlist_settings_menu import TierlistSettingsMenu
 from src.screenshot import ScreenshotWindowManager
+from pygame._sdl2 import video as pgvideo
 
 if "win" in sys.platform or os.name == "nt":
     import ctypes
@@ -26,12 +28,17 @@ class TierlistApp(mili.GenericApp):
         assert mili.VERSION >= (1, 0, 5)
         print(f"MILI {mili.VERSION_STR}")
         pygame.init()
-        super().__init__(
-            pygame.Window(
+        win = pygame.Window(
                 "Tierlist", pygame.display.get_desktop_sizes()[0], borderless=True
-            ),
+            )
+        canva = None
+        if common.USE_RENDERER:
+            canva = pgvideo.Renderer(win)
+        super().__init__(
+            win,
             start_style=mili.CENTER | mili.PADLESS,
             target_framerate=120,
+            canva=canva
         )
         pygame.key.set_repeat(300, 80)
         mili.icon.setup("appdata", "white", svg_size=255)
@@ -55,6 +62,7 @@ class TierlistApp(mili.GenericApp):
         self.settings_menu = SettingsMenu(self)
         self.tierlist_view = TierlistView(self)
         self.tierlist_settings_menu = TierlistSettingsMenu(self)
+        self.best_chars_menu = BestCharsMenu(self)
         self.mal_menu = MALMenu(self)
         self.tierlist: data.TierlistData = None
         self.alert_system = alert.AlertSystem(self)
